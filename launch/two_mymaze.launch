@@ -1,0 +1,55 @@
+
+<!-- Launches Kobuki Gazebo simulation in an empty world -->
+<launch>
+
+    <!-- start Gazebo with an empty world, but change the worldname to my predefined world-->
+    <include file="$(find gazebo_ros)/launch/empty_world.launch">
+        <arg name="use_sim_time" value="true"/>
+        <arg name="debug" value="false"/>
+        <arg name="world_name" value="$(find fyp)/launch/includes/worlds/my_maze.world"/>
+    </include>
+
+
+	<!-- spawn robot 1-->
+	<group ns="/robot_1">
+		<include file="$(find fyp)/launch/includes/robot_launch.xml">
+			<arg name="robot_name" value="robot_1"/>
+			<arg name="init_pose" value="-x 0.0 -y 0.0 -z 0.0"/>
+		</include>
+		<include file="$(find fyp)/launch/includes/navigation.launch">
+			<arg name="namespace" value="robot_1"/>
+		</include> 
+	</group>
+
+	<!-- spawn robot 2-->
+	<group ns="/robot_2">
+		<include file="$(find fyp)/launch/includes/robot_launch.xml">
+			<arg name="robot_name" value="robot_2"/>
+			<!-- Need to specify robots initial relative position-->
+			<arg name="init_pose" value="-x 0.0 -y -0.8 -z 0.0"/>
+		</include>
+		<include file="$(find fyp)/launch/includes/navigation.launch">
+			<arg name="namespace" value="robot_2"/>
+		</include> 
+	</group>
+
+
+	<!-- transformation between robots https://automaticaddison.com/coordinate-frames-and-transforms-for-ros-based-mobile-robots/-->
+	<node pkg="tf2_ros" type="static_transform_publisher" name="robot2_to_robot1" args="0 -0.8 0 0 0 0 1 /robot_1/map /robot_2/map" />
+	
+	<!-- Map megring (know inital position case)-->
+	<include file="$(find fyp)/launch/includes/initconfig/two_initposes.launch"/>
+	<include file="$(find fyp)/launch/includes/map_merge.launch"/>
+
+
+<!-- run RViz node (visualization)
+<node pkg="rviz" type="rviz" name="rviz" args="-d $(find multi_kobuki_gazebo)/launch/rviz_config/three.rviz">
+	<remap from="move_base_simple/goal" to="robot_1/move_base_simple/goal"/>
+</node>
+ -->
+
+	<node pkg="rviz" type="rviz" name="rviz" args="-d $(find fyp)/launch/includes/rviz_config/two_config.rviz">
+		<remap from="robot_1/move_base_node/current_goal" to="robot_1/move_base_simple/goal"/>
+	</node>
+
+</launch>

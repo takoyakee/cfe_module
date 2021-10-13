@@ -1,0 +1,48 @@
+Current capabilities:
+Node is launchable with param names
+- Subscribe to tf tree and know its current location
+- Subscribe to map and know its position on map
+- Maintain a map based on sensor position
+- Robot class to include function that discount cells near other robots
+- Robot class to include function deciding which frontier to explore
+- (and know location of other robots)
+
+To do capabilities:
+- actionbaselib client!!!!!! to send goals (URGENT)
+- visualise top 10 Frontier Choices!!! (on Rviz)
+- DEFINE INFORMATION GAIN IN TERMS OF UNKNOWN CELL IN VICNITY (updateInformationGain) (INTERMEDIATE)
+- reevaluate naming (INTERMEDIATE)
+- Way to test efficiency of algorithm (INTERMEDIATE)
+- Find out other robots' goals!!! (INTERMEDIATE)
+- Exchange map with other robots  (HARD...)
+- Reorganise class such that main.cpp is clean
+- rename main.cpp
+- use base global planner to calculate distance to different cells and pick best goal (and storing the path generated)
+
+additional goodtohaves/considerations
+- shd we really discard the values from priority queue? Is there a way to speed up the priority queue operation?
+
+
+geometry_msgs::PoseStamped Robot::Robot::getCurrentPosition(){
+    tf2_ros::Buffer buffer;
+    tf2_ros::TransformListener tfl(buffer);
+    //tf::TransformListener listener;
+    //use lookupTransform to get current position in global frame, cannot use tf2 because of lack of tf_prefix
+    geometry_msgs::TransformStamped transformStamped;
+    geometry_msgs::PoseStamped tempPose;
+    //tf::StampedTransform stampedtsf;
+    try {
+    	//lesson learnt: to set ros::Time(0) insted of ros::Time::now()
+    	//listener.waitForTransform(globalFrame, robotFrame, ros::Time(0), ros::Duration(10.0));
+        //listener.lookupTransform(globalFrame, "robot_2/base_link", ros::Time(0), stampedtsf);
+        transformStamped = buffer.lookupTransform(globalFrame, robotFrame, ros::Time(0), ros::Duration(3.0));
+    } catch (tf2::TransformException &e) {}
+
+    //tf2_helper::convert(transformStamped, currentPose);
+    tf2::doTransform(tempPose, currentPose, transformStamped);
+
+    return currentPose;
+    //ROS_INFO("Translation: %f,%f", transformStamped.transform.translation.x,  transformStamped.transform.translation.y);
+    //ROS_INFO("Translation: %f,%f", stampedtsf.getOrigin().x(), stampedtsf.getOrigin().y());
+
+}

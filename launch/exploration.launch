@@ -1,0 +1,10 @@
+<launch>
+    <node pkg="fyp" type="exploration_module" name="robot_2_frontier_module" output="screen">
+    	<param name="robot_name" value="robot_2"/>
+        <param name="global_frame" value ="robot_1/map"/>
+        <param name="robot_frame" value="robot_2/base_link"/>
+        <param name="map_topic" value="/robot_2/map"/>
+        <param name="team_size" value=2/>
+    </node>
+
+</launch>
