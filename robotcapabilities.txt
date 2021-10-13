@@ -9,6 +9,7 @@ Node is launchable with param names
 
 To do capabilities:
 - actionbaselib client!!!!!! to send goals (URGENT)
+- discount cells properly (the more the robots are near, the higher the discount)
 - visualise top 10 Frontier Choices!!! (on Rviz)
 - DEFINE INFORMATION GAIN IN TERMS OF UNKNOWN CELL IN VICNITY (updateInformationGain) (INTERMEDIATE)
 - reevaluate naming (INTERMEDIATE)

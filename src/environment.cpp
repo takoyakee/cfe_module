@@ -7,18 +7,12 @@
 #include "fyp/environment.h"
 
 
-struct Frontier {
-	int x;
-	int y;
-	unsigned char utility;
-	Frontier(int x_,int y_,unsigned char utility_): x(x_),y(y_),utility(utility_){};
-};
 
 Environment::Environment(){ // @suppress("Class members should be properly initialized")
 	envWidth = 0;
 	envHeight = 0;
 	maxDist = 0;
-	searchRadius = 30; //defined in cells;
+	searchRadius = 30; //defined in cells, should be references to actual laser range
 	discountMult = 5;
 	costMult = 5;
 	dweight = 0.5;
@@ -51,40 +45,32 @@ Environment::~Environment(){
 }
 
 //Vector is sorted accordingly to utility
-std::vector<geometry_msgs::PoseStamped> Environment::returnFrontierChoice(){
+Environment::Frontier Environment::returnFrontierChoice(){
 	getFrontierCells();
 	updateDiscountCells();
 	updateCostCells();
 
-	std::vector<geometry_msgs::PoseStamped> frontierPose;
     auto cmp = [](Frontier left, Frontier right) { return (left.utility) < (right.utility); };
     std::priority_queue<Frontier, std::vector<Frontier>, decltype(cmp)> pq(cmp);
 	for (auto idx : prevFrontierCells){
-		unsigned char utility_ = (unsigned char)
-				(255 - cweight*costGrid[idx[0]][idx[1]] - dweight*discountGrid[idx[0]][idx[1]]);
+		unsigned char utility_ = evaluateUtility(idx[0],idx[1]);
 		Frontier fcell(idx[0],idx[1],utility_);
 		pq.push(fcell);
 	}
 
 	ros::Time timenow = ros::Time::now();
-	int i = 0;
 	//todo: shouldn't discard the value
-	while (!pq.empty() &&  i < reserveSize){
-		Frontier temp = pq.top();
-		pq.pop();
-		geometry_msgs::PoseStamped pose;
-		pose.pose.position.x = temp.x;
-		pose.pose.position.y = temp.y;
-		pose.header.frame_id = globalFrame;
-		pose.header.stamp = timenow;
-		frontierPose.push_back(pose);
-		i++;
-	}
+	Frontier bestFrontier = pq.top();
+	pq.pop();
+	bestFrontier.pose.pose.position.x = bestFrontier.x;
+	bestFrontier.pose.pose.position.y = bestFrontier.y;
+	bestFrontier.pose.header.frame_id = globalFrame;
+	bestFrontier.pose.header.stamp = timenow;
 
 	resetDiscountGrid();
 	resetCostGrid();
 
-	return frontierPose;
+	return bestFrontier;
 }
 
 
@@ -107,11 +93,11 @@ void Environment::Environment::updateOccupancyGrid(nav_msgs::OccupancyGrid occup
 
 void Environment::Environment::initialiseGrids(nav_msgs::OccupancyGrid occupancyGrid_){
 	occupancyGrid = occupancyGrid_;
-	discountGrid = new unsigned char* [envWidth];
+	discountGrid = new unsigned double* [envWidth];
 	costGrid = new unsigned char* [envWidth];
 	//frontierGrid = new char* [envWidth];
 	for(int i = 0; i < envWidth; i++) {
-	    discountGrid[i] = new unsigned char[envHeight];
+	    discountGrid[i] = new unsigned double[envHeight];
 		costGrid[i] = new unsigned char[envHeight];
 		//frontierGrid[i] = new int[envHeight];
 		for (int j=0; j < envHeight; j++){
@@ -163,12 +149,21 @@ void Environment::Environment::updateDiscountCells(){
 					for (std::vector<int> cell : neighbourCells) {
 						int x_ = xc+cell[0]*x, y_ = yc+cell[1]*y;
 						if (inMap(x_,y_) && occupancyGrid.data[coordToIndex(x_,y_)] == -1){
-							discountGrid[x_][y_] = distToDiscount(dist);
+							if (discountGrid[x_][y_] == 0){
+								discountGrid[x_][y_] = distToDiscount(dist);
+							} else {
+								//inspired by alpha blending kekek
+								discountGrid[x_][y_] = discountGrid[x_][y_]  + (1-discountGrid[x_][y_])*distToDiscount(dist);
+							}
 							prevDCCells.push_back({x_,y_});
 						}
 						x_ = xc+cell[0]*y, y_ = yc+cell[1]*x;
 						if (inMap(x_,y_) && occupancyGrid.data[coordToIndex(x_,y_)] == -1){
-							discountGrid[x_][y_] = distToDiscount(dist);
+							if (discountGrid[x_][y_] == 0){
+								discountGrid[x_][y_] = distToDiscount(dist);
+							} else {
+								discountGrid[x_][y_] = discountGrid[x_][y_]  + (1-discountGrid[x_][y_])*distToDiscount(dist);
+							}
 							prevDCCells.push_back({x_,y_});
 						}
 					}
@@ -176,9 +171,13 @@ void Environment::Environment::updateDiscountCells(){
 			}
 		}
 	}
+
 }
 
+unsigned char Environment::evaluateUtility(int cx_, int cy_){
+	return (unsigned char) MAX(0,(255 - cweight*costGrid[cx_][cy_] - dweight*254*discountGrid[cx_][cy_]));
 
+}
 
 std::vector<std::vector<int>> Environment::getFrontierCells(){
 	prevFrontierCells.clear();
@@ -200,8 +199,12 @@ void Environment::waitForRobotPose(){
 	bUpdateRobotPose = true;
 }
 
-void Environment::updateRobotTeamPoses(std::vector<geometry_msgs::PoseStamped> robotTeamPoses_){
-	robotTeamPoses = std::move(robotTeamPoses_);
+void Environment::updateRobotTeamPoses(std::map<std::string, geometry_msgs::PoseStamped> robotTeamPoses_){
+	std::vector<geometry_msgs::PoseStamped> poseVector;
+	for(auto& pose: robotTeamPoses_) {
+		poseVector.push_back(pose.second);
+	}
+	robotTeamPoses = std::move(poseVector);
 }
 
 void Environment::waitForRobotTeamPoses(){
@@ -229,9 +232,10 @@ char Environment::Environment::costOfCell(int cx_, int cy_, std::vector<int> pos
 }
 
 //The greater the value, the closer the cell is to neighbouring cells
-unsigned char Environment::Environment::distToDiscount(int dist){
-	double factor = exp(-1*discountMult * dist);
-	return (unsigned char)(255-1)*factor;
+double Environment::Environment::distToDiscount(int dist){
+	//return exp(-1*discountMult * dist);
+	return dist/searchRadius ;
+
 }
 
 /*
@@ -264,6 +268,21 @@ std::vector<int> Environment::Environment::pointToCoord(float mx_, float my_){
 bool Environment::inMap(int cx_, int cy_){
 	return (cx_ >= 0 && cx_ <= envWidth && cy_ >= 0 && cy_ <= envHeight);
 }
+
+Environment::Frontier::Frontier(int x_,int y_,unsigned char utility_){
+	x = x_;
+	y = x_;
+	utility = utility_;
+}
+
+Environment::Frontier& Environment::Frontier::operator = (const Frontier& f1){
+	x = f1.x;
+	y = f1.y;
+	utility = f1.utility;
+	pose = f1.pose;
+	return *this;
+};
+
 
 /*
 

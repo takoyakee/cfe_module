@@ -1,11 +1,13 @@
 #include <fyp/robot.h>
 
-Robot::Robot(std::string robotName_, std::string globalFrame_, std::string robotFrame_, int teamSize_)
+Robot::Robot(std::string robotName_, std::string robotMapFrame_, std::string globalFrame_, std::string robotFrame_, std::string frontierGoal_ ,int teamSize_)
 {
     robotName = robotName_;
+    robotMapFrame = robotMapFrame_;
     globalFrame = globalFrame_;
     //e.g. robot_1/baselink
     robotFrame = robotFrame_;
+    frontierGoal = frontierGoal_;
     currentPose = getCurrentPose();
     teamSize = teamSize_;
     hasGoal = false;
@@ -14,7 +16,6 @@ Robot::Robot(std::string robotName_, std::string globalFrame_, std::string robot
     commRadius = 30;
     failedAttempts = 0;
     frontiersExplored = 0;
-
 }
 
 
@@ -34,41 +35,18 @@ geometry_msgs::PoseStamped Robot::Robot::getCurrentPose(){
 
 }
 
-std::vector<geometry_msgs::PoseStamped> Robot::getTeamPoses(){
-	teamPoses.clear();
-	for (int i = 1; i < teamSize+1; i++){
-		std::string tempName = "robot_" + std::to_string(i);
-		if (tempName.compare(robotName) == 0){
-			continue;
-		}
-		// todo: avoid hard code
-		std::string targetFrame = tempName + "/base_link";
-
-		//todo: Obtain other robots poses via tf, evaluate distance before appending to vector
-		// two ways: calculate norm (TRY FIRST) OR listen twice
-	    tf2_ros::Buffer buffer;
-	    tf2_ros::TransformListener tfl(buffer);
-	    geometry_msgs::TransformStamped transformStamped;
-	    geometry_msgs::PoseStamped tempPose;
-	    geometry_msgs::PoseStamped otherPose;
-	    try {
-	        transformStamped = buffer.lookupTransform(globalFrame, targetFrame, ros::Time(0), ros::Duration(3.0));
-	    } catch (tf2::TransformException &e) {
-	    	ROS_WARN("Error with transform");
-	    }
-	    tf2::doTransform(tempPose, otherPose, transformStamped);
-	    getCurrentPose();
-	    if (norm(otherPose,currentPose) <= commRadius) {teamPoses.push_back(otherPose);}
-	}
-	return teamPoses;
-
-}
-
 bool Robot::updateGoal(geometry_msgs::PoseStamped goalPose_){
 	goalPose = goalPose_;
 	return true;
 }
 
+void Robot::teamPoseCallBack(const geometry_msgs::PoseStamped& msg){
+	//only consider if pose published is not own
+	std::string poseMapFrame = msg.header.frame_id;
+	if (poseMapFrame.compare(robotMapFrame) != 1){
+		teamPoses[poseMapFrame] = msg;
+	}
+}
 
 void Robot::mapCallBack(const nav_msgs::OccupancyGrid& msg){
 	if (msg.data.size()> 0){
@@ -92,7 +70,7 @@ void Robot::getFrontierCandidates(){
 	//Feed latest currentPose and TeamPose
 	updateEnvTeamPose();
 	updateEnvCurrentPose();
-	frontierCandidates = std::move(robotEnvironment.returnFrontierChoice());
+	frontierCandidate = robotEnvironment.returnFrontierChoice();
 }
 
 //todo: If robot cannot find suitable position to move to, let him move randomly.
@@ -140,17 +118,6 @@ bool Robot::sendGoal(){
 
 }
 
-//Tentatively dont use waitforresult!
-/*bool Robot::waitForResult(){
-	moveBaseClient.waitForResult();
-	if (moveBaseClient.getState() == actionlib::SimpleClientGoalState::SUCCEEDED){
-		goalReached = true;
-		return true;
-	}
-	goalReached = false;
-	return false;
-}*/
-
 geometry_msgs::PoseStamped Robot::convertToRobotFrame(geometry_msgs::PoseStamped pose_){
     tf2_ros::Buffer buffer;
     tf2_ros::TransformListener tfl(buffer);
@@ -165,6 +132,49 @@ geometry_msgs::PoseStamped Robot::convertToRobotFrame(geometry_msgs::PoseStamped
     tf2::doTransform(pose_, rfPose, transformStamped);
     return rfPose;
 }
+
+
+//Tentatively dont use waitforresult!
+/*bool Robot::waitForResult(){
+	moveBaseClient.waitForResult();
+	if (moveBaseClient.getState() == actionlib::SimpleClientGoalState::SUCCEEDED){
+		goalReached = true;
+		return true;
+	}
+	goalReached = false;
+	return false;
+}*/
+
+/*std::vector<geometry_msgs::PoseStamped> Robot::getTeamPoses(){
+	teamPoses.clear();
+	for (int i = 1; i < teamSize+1; i++){
+		std::string tempName = "robot_" + std::to_string(i);
+		if (tempName.compare(robotName) == 0){
+			continue;
+		}
+		// todo: avoid hard code
+		std::string targetFrame = tempName + "/base_link";
+
+		//todo: Obtain other robots poses via tf, evaluate distance before appending to vector
+		// two ways: calculate norm (TRY FIRST) OR listen twice
+	    tf2_ros::Buffer buffer;
+	    tf2_ros::TransformListener tfl(buffer);
+	    geometry_msgs::TransformStamped transformStamped;
+	    geometry_msgs::PoseStamped tempPose;
+	    geometry_msgs::PoseStamped otherPose;
+	    try {
+	        transformStamped = buffer.lookupTransform(globalFrame, targetFrame, ros::Time(0), ros::Duration(3.0));
+	    } catch (tf2::TransformException &e) {
+	    	ROS_WARN("Error with transform");
+	    }
+	    tf2::doTransform(tempPose, otherPose, transformStamped);
+	    getCurrentPose();
+	    if (norm(otherPose,currentPose) <= commRadius) {teamPoses.push_back(otherPose);}
+	}
+	return teamPoses;
+
+}*/
+
 
 
 

@@ -12,8 +12,17 @@
 
 class Environment {
 
-
 	public:
+
+		struct Frontier {
+			int x;
+			int y;
+			unsigned char utility;
+			geometry_msgs::PoseStamped pose;
+			Frontier& operator =(const Frontier& f1);
+			Frontier(int x_,int y_,unsigned char utility_);
+		};
+
 		//constructor
 		Environment();
 		~Environment();
@@ -25,14 +34,16 @@ class Environment {
 
 		//Poses to help in cost/discount calculations
 		//todo: Consider keeping track of robot names
+		geometry_msgs::PoseStamped goalPose;
 		geometry_msgs::PoseStamped currentPose;
+		//robotTeamPose should be robotTeamGoalPose
 		std::vector<geometry_msgs::PoseStamped> robotTeamPoses;
 
 		//Grids for frontier allocations
 		//todo: Possibly convert OccupancyGrid to occupancy2D to reeduce calling CoordToIndex
 		//Allocate memory?
 		char ** occupancy2D;
-		unsigned char** discountGrid;
+		double** discountGrid;
 		unsigned char** costGrid;
 		//frontier Grids
 		unsigned char** frontierGrid;
@@ -44,7 +55,7 @@ class Environment {
 
 		void updateRobotPose(geometry_msgs::PoseStamped currentPose_);
 		void waitForRobotPose();
-		void updateRobotTeamPoses(std::vector<geometry_msgs::PoseStamped> robotTeamPoses_);
+		void updateRobotTeamPoses(std::map<std::string, geometry_msgs::PoseStamped> robotTeamPoses_);
 		void waitForRobotTeamPoses();
 		//todo: combine cost and discount grid, TO have updateInformationGrids ( have discount and i.g.)
 		//discount to consider other robots' allocated goals
@@ -53,7 +64,9 @@ class Environment {
 		bool updateCostCells();
 		void updateDiscountCells();
 		std::vector<std::vector<int>> getFrontierCells();
-		std::vector<geometry_msgs::PoseStamped> returnFrontierChoice();
+		Frontier returnFrontierChoice();
+		unsigned char evaluateUtility(int cx_, int cy_);
+
 
 		char costOfCell(int cellRow, int cellCol, std::vector<int> pos_);
 
@@ -94,7 +107,7 @@ class Environment {
 		int coordToIndex(int cx_, int cy_);
 		std::vector<int> pointToCoord(float mx_, float my_);
 		std::vector<int> indexToCoord(int index_);
-		unsigned char distToDiscount(int dist);
+		double distToDiscount(int dist);
 };
 
 

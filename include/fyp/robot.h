@@ -10,13 +10,15 @@ class Robot{
 
     public: 
         //Constructor 
-        Robot(std::string robotName_, std::string globalFrame_, std::string robotFrame_, int teamSize_);
+        Robot(std::string robotName_, std::string robotMapFrame_, std::string globalFrame_,
+        		std::string robotFrame_, std::string frontierGoal_, int teamSize_);
 
         //info from main
         std::string robotName;
         std::string globalFrame;
         std::string robotFrame;
         std::string robotMapFrame;
+        std::string frontierGoal;
         int teamSize;
 
         //to be compatible with move_base goal,
@@ -24,8 +26,8 @@ class Robot{
         // Require a converter to send goal (in robot map frame)
         geometry_msgs::PoseStamped goalPose;
         geometry_msgs::PoseStamped currentPose;
-        std::vector<geometry_msgs::PoseStamped> teamPoses;
-        std::vector<geometry_msgs::PoseStamped> frontierCandidates;
+        std::map<std::string, geometry_msgs::PoseStamped> teamPoses;
+        Environment::Frontier frontierCandidate{0,0,0};
         move_base_msgs::MoveBaseGoal moveBaseGoal;
         MoveBaseClient moveBaseClient{"robot_1",true};
         Environment robotEnvironment;
@@ -40,13 +42,11 @@ class Robot{
         //hyper parameter
         float commRadius;
 
-
-
         //get goal position, get other robots position if within communication range, exchange map info
         bool updateGoal(geometry_msgs::PoseStamped goalPose_);
         void updateMBG();
         void mapCallBack(const nav_msgs::OccupancyGrid& msg);
-        void teamPoseCallBack();
+        void teamPoseCallBack(const geometry_msgs::PoseStamped& msg);
         geometry_msgs::PoseStamped getCurrentPose();
         std::vector<geometry_msgs::PoseStamped> getTeamPoses();
         void updateEnvCurrentPose();

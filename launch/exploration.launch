@@ -5,6 +5,7 @@
         <param name="robot_frame" value="robot_2/base_link"/>
         <param name="map_topic" value="/robot_2/map"/>
         <param name="team_size" value=2/>
+        <param name="frontier_goal" value="/frontier/goal"/>
     </node>
 
 </launch>
