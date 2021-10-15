@@ -11,5 +11,5 @@
 #include <map>
 
 float norm(geometry_msgs::PoseStamped ps1, geometry_msgs::PoseStamped ps2);
-
-#define MAX_CELL_VALUE 255;
+std::string replace(std::string& str,std::string from, std::string to);
+std::string eraseSubStr(std::string mainStr, const std::string toErase);

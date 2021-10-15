@@ -27,10 +27,12 @@ class Environment {
 		Environment();
 		~Environment();
 
+		int envWidth;
+		int envHeight;
+
 		//Current resolution: 0.1 (0.1m/cell)
 		nav_msgs::OccupancyGrid occupancyGrid;
-		//costmap_2d::Costmap2DROS costMap;
-		//grid_map::GridMap gridMap;
+
 
 		//Poses to help in cost/discount calculations
 		//todo: Consider keeping track of robot names
@@ -39,20 +41,11 @@ class Environment {
 		//robotTeamPose should be robotTeamGoalPose
 		std::vector<geometry_msgs::PoseStamped> robotTeamPoses;
 
-		//Grids for frontier allocations
-		//todo: Possibly convert OccupancyGrid to occupancy2D to reeduce calling CoordToIndex
-		//Allocate memory?
-		char ** occupancy2D;
-		double** discountGrid;
-		unsigned char** costGrid;
-		//frontier Grids
-		unsigned char** frontierGrid;
-
 		bool bUpdateRobotPose;
 		bool bUpdateRobotTeamPoses;
 
-		void updateOccupancyGrid(nav_msgs::OccupancyGrid occupancyGrid_);
-
+		bool isEnvironmentInitialised();
+		void updateOccupancyGrid(const nav_msgs::OccupancyGrid::ConstPtr& occupancyGrid_);
 		void updateRobotPose(geometry_msgs::PoseStamped currentPose_);
 		void waitForRobotPose();
 		void updateRobotTeamPoses(std::map<std::string, geometry_msgs::PoseStamped> robotTeamPoses_);
@@ -62,13 +55,13 @@ class Environment {
 
 		//Updates selected cells (not entire map)
 		bool updateCostCells();
-		void updateDiscountCells();
+		bool updateDiscountCells();
 		std::vector<std::vector<int>> getFrontierCells();
 		Frontier returnFrontierChoice();
 		unsigned char evaluateUtility(int cx_, int cy_);
 
 
-		char costOfCell(int cellRow, int cellCol, std::vector<int> pos_);
+		unsigned char costOfCell(int cellRow, int cellCol, std::vector<int> pos_);
 
 		//Resetting costGrid and discountGrid values
 		void resetCostGrid();
@@ -78,16 +71,20 @@ class Environment {
 
 	private:
 		//initialising every Grid
-		void initialiseGrids(nav_msgs::OccupancyGrid occupancyGrid_);
-		void hardResetCostGrid();
-		void hardResetDiscountGrid();
+		void initialiseGrids();
+		void resetGrids();
 
 		// Storing previously changed cells
 		std::vector<std::vector<int>> prevFrontierCells;
 		std::vector<std::vector<int>> prevDCCells;
 
-		int envWidth;
-		int envHeight;
+		//Grids for frontier allocations
+		char ** occupancy2D;
+		double** discountGrid;
+		unsigned char** costGrid;
+		//frontier Grids
+		unsigned char** frontierGrid;
+
 		int maxDist;
 		std::string globalFrame;
 		std::vector<std::vector<int>> neighbourCells;
@@ -105,6 +102,7 @@ class Environment {
 		bool inMap(int cx_, int cy_);
 
 		int coordToIndex(int cx_, int cy_);
+		std::vector<float> coordToPoint(int cx_, int cy_);
 		std::vector<int> pointToCoord(float mx_, float my_);
 		std::vector<int> indexToCoord(int index_);
 		double distToDiscount(int dist);
