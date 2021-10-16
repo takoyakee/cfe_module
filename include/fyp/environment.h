@@ -6,6 +6,7 @@
  */
 #include <fyp/functions.h>
 #include <queue>
+#include <visualization_msgs/Marker.h>
 
 #ifndef FYP_INCLUDE_FYP_ENVIRONMENT_H_
 #define FYP_INCLUDE_FYP_ENVIRONMENT_H_
@@ -57,6 +58,7 @@ class Environment {
 		bool updateCostCells();
 		bool updateDiscountCells();
 		std::vector<std::vector<int>> getFrontierCells();
+		bool isFrontier(int cx_, int cy_);
 		Frontier returnFrontierChoice();
 		unsigned char evaluateUtility(int cx_, int cy_);
 
@@ -66,13 +68,15 @@ class Environment {
 		//Resetting costGrid and discountGrid values
 		void resetCostGrid();
 		void resetDiscountGrid();
+		void resetFrontierGrid();
+		visualization_msgs::Marker visualiseFrontier();
 
 		//To keep track of other robot's location
 
 	private:
 		//initialising every Grid
 		void initialiseGrids();
-		void resetGrids();
+		void deleteGrids();
 
 		// Storing previously changed cells
 		std::vector<std::vector<int>> prevFrontierCells;
@@ -87,6 +91,7 @@ class Environment {
 
 		int maxDist;
 		std::string globalFrame;
+		std::vector<std::vector<int>> circleCorners;
 		std::vector<std::vector<int>> neighbourCells;
 
 		//Hyper parameters

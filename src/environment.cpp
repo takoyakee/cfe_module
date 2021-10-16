@@ -7,7 +7,6 @@
 #include "fyp/environment.h"
 
 
-
 Environment::Environment(){ // @suppress("Class members should be properly initialized")
 	envWidth = 0;
 	envHeight = 0;
@@ -19,7 +18,8 @@ Environment::Environment(){ // @suppress("Class members should be properly initi
 	cweight = 0.5;
 	expirationTime = 10000;
 	reserveSize = 10;
-	neighbourCells = {{1,1},{1,-1},{-1,1},{-1,-1}};
+	circleCorners = {{1,1},{1,-1},{-1,1},{-1,-1}};
+	neighbourCells = {{-1,1},{0,1},{1,1},{-1,0},{1,0},{-1,-1},{0,-1},{1,-1}};
 	bUpdateRobotPose = false;
 	bUpdateRobotTeamPoses = false;
 	discountGrid = NULL;
@@ -30,7 +30,7 @@ Environment::Environment(){ // @suppress("Class members should be properly initi
 }
 
 Environment::~Environment(){
-	resetGrids();
+	deleteGrids();
 }
 
 //Vector is sorted accordingly to utility
@@ -95,7 +95,7 @@ void Environment::Environment::updateOccupancyGrid(const nav_msgs::OccupancyGrid
 		envWidth = occupancyGrid.info.width;
 		envHeight = occupancyGrid.info.height;
 		maxDist = (int)(sqrt(pow(envWidth,2)+pow(envHeight,2)));
-		resetGrids();
+		deleteGrids();
 		initialiseGrids();
 	}
 	ROS_INFO("max dist: %d", maxDist);
@@ -105,11 +105,11 @@ void Environment::Environment::initialiseGrids(){
 	ROS_INFO("Initialising grids of (%d x %d)", envWidth, envHeight);
 	discountGrid = new double* [envWidth];
 	costGrid = new unsigned char* [envWidth];
-	//frontierGrid = new char* [envWidth];
+	frontierGrid = new unsigned char* [envWidth];
 	for(int i = 0; i < envWidth; i++) {
 	    discountGrid[i] = new double[envHeight];
 		costGrid[i] = new unsigned char[envHeight];
-		//frontierGrid[i] = new int[envHeight];
+		frontierGrid[i] = new unsigned char[envHeight];
 		for (int j=0; j < envHeight; j++){
 			discountGrid[i][j] = 0;
 			costGrid[i][j] = 0;
@@ -118,15 +118,15 @@ void Environment::Environment::initialiseGrids(){
 	}
 }
 
-void Environment::resetGrids(){
+void Environment::deleteGrids(){
 	for(int i = 0; i < envWidth; i++) {
 	    delete[] discountGrid[i];
 		delete[] costGrid[i];
-		//delete[] frontierGrid[i];
+		delete[] frontierGrid[i];
 	}
 	delete[] discountGrid;
 	delete[] costGrid;
-	//delete[] frontierGrid;
+	delete[] frontierGrid;
 
 	discountGrid = NULL;
 	costGrid = NULL;
@@ -138,7 +138,8 @@ bool Environment::Environment::updateCostCells(){
 	ros::Time poseTime = currentPose.header.stamp;
 	//sensitive to simtime
 	ros::Duration timePassed = ros::Time::now() - poseTime ;
-	//ROS_INFO("Current time: %f, PoseTime: %f, timePassed: %f", ros::Time::now().toSec(), poseTime.toSec(), timePassed.toSec());
+	ros::Time rosTime = ros::Time(0);
+	ROS_INFO("Current time: %f, PoseTime: %f, rosTime: %f", ros::Time::now().toSec(), poseTime.toSec(),rosTime.toSec());
 	if (timePassed.toSec() > expirationTime){
 		waitForRobotPose();
 		return false;
@@ -175,9 +176,9 @@ bool Environment::Environment::updateDiscountCells(){
 				for (int y = 0; y <= x; y++){
 					if (x*x + y*y <= searchRadius * searchRadius){
 						int dist = x + y; //taking Manhattan distance
-						for (std::vector<int> cell : neighbourCells) {
+						for (std::vector<int> cell : circleCorners) {
 							int x_ = xc+cell[0]*x, y_ = yc+cell[1]*y;
-							if (inMap(x_,y_) && occupancyGrid.data[coordToIndex(x_,y_)] == -1){
+							if (inMap(x_,y_) && frontierGrid[x_][y_] == 1){
 								if (discountGrid[x_][y_] == 0){
 									discountGrid[x_][y_] = distToDiscount(dist);
 								} else {
@@ -187,7 +188,7 @@ bool Environment::Environment::updateDiscountCells(){
 								prevDCCells.push_back({x_,y_});
 							}
 							x_ = xc+cell[0]*y, y_ = yc+cell[1]*x;
-							if (inMap(x_,y_) && occupancyGrid.data[coordToIndex(x_,y_)] == -1){
+							if (inMap(x_,y_) && frontierGrid[x_][y_] == 1){
 								if (discountGrid[x_][y_] == 0){
 									discountGrid[x_][y_] = distToDiscount(dist);
 								} else {
@@ -207,10 +208,10 @@ bool Environment::Environment::updateDiscountCells(){
 
 unsigned char Environment::evaluateUtility(int cx_, int cy_){
 	//ERROR! Recalculate utility cells!!
-	ROS_INFO("(%d,%d), cost: %d, dc: %d, utility: %d", cx_, cy_, costGrid[cx_][cy_],254*discountGrid[cx_][cy_],
-			MAX(0,(255 - (int) cweight*costGrid[cx_][cy_] - dweight*254*discountGrid[cx_][cy_])));
+	/*ROS_INFO("(%d,%d), cost: %d, dc: %f, utility: %d", cx_, cy_, costGrid[cx_][cy_], (254*discountGrid[cx_][cy_]),
+			(unsigned char) (MAX(0,(255 - cweight*costGrid[cx_][cy_] - dweight*254*discountGrid[cx_][cy_]))));
 
-	return (unsigned char) MAX(0,(255 - cweight*costGrid[cx_][cy_] - dweight*254*discountGrid[cx_][cy_]));
+*/	return (unsigned char) (MAX(0,(255 - cweight*costGrid[cx_][cy_] - dweight*254*discountGrid[cx_][cy_])));
 
 }
 
@@ -219,16 +220,96 @@ bool Environment::isEnvironmentInitialised(){
 }
 
 std::vector<std::vector<int>> Environment::getFrontierCells(){
+	//need to only return frontier cells --> get a convolution and evaluate?
 	prevFrontierCells.clear();
 	for (int i = 0; i < envWidth; i++){
 		for (int j = 0; j < envHeight; j++){
-			if (occupancyGrid.data[coordToIndex(i, j)] == -1){
+			if (occupancyGrid.data[coordToIndex(i, j)] == -1 && isFrontier(i,j) ){
+				frontierGrid[i][j] = 1;
 				prevFrontierCells.push_back({i,j});
 			}
 		}
 	}
+	visualiseFrontier();
 	return prevFrontierCells;
 }
+
+visualization_msgs::Marker visualiseFrontier(){
+#include <visualization_msgs/Marker.h>
+
+  uint32_t shape = visualization_msgs::Marker::CUBE;
+
+   visualization_msgs::Marker marker;
+   marker.header.frame_id = "robot_1/map";
+   marker.header.stamp = ros::Time::now();
+
+    marker.ns = "basic_shapes";
+    marker.id = 0;
+    marker.type = shape;
+
+    marker.action = visualization_msgs::Marker::ADD;
+
+    marker.pose.position.x = 0;
+    marker.pose.position.y = 0;
+    marker.pose.position.z = 0;
+    marker.pose.orientation.x = 0.0;
+    marker.pose.orientation.y = 0.0;
+    marker.pose.orientation.z = 0.0;
+    marker.pose.orientation.w = 1.0;
+// %EndTag(POSE)%
+
+    // Set the scale of the marker -- 1x1x1 here means 1m on a side
+// %Tag(SCALE)%
+    marker.scale.x = 1.0;
+    marker.scale.y = 1.0;
+    marker.scale.z = 1.0;
+// %EndTag(SCALE)%
+
+    // Set the color -- be sure to set alpha to something non-zero!
+// %Tag(COLOR)%
+    marker.color.r = 0.0f;
+    marker.color.g = 1.0f;
+    marker.color.b = 0.0f;
+    marker.color.a = 1.0;
+// %EndTag(COLOR)%
+
+// %Tag(LIFETIME)%
+    marker.lifetime = ros::Duration();
+// %EndTag(LIFETIME)%
+
+    return marker
+
+}
+
+
+bool Environment::isFrontier(int cx_, int cy_){
+	float frontierThreshold = 0.4;
+	int unknownCount = 0;
+	int validCells = 9;
+	for (auto idx: neighbourCells){
+		int newcx_ = cx_+idx[0];
+		int newcy_ = cy_+idx[1];
+		//ROS_INFO("unknown: %d, valid: %d", unknownCount, validCells);
+		if (inMap(newcx_, newcy_)){
+			if (occupancyGrid.data[coordToIndex(newcx_, newcy_)] == -1){
+				unknownCount+=1;
+			}
+		} else {
+			validCells -=1;
+		}
+		//ROS_INFO("(%d,%d), unknown: %d, valid: %d, fraction: %f", newcx_, newcy_,unknownCount, validCells,(float)(unknownCount)/validCells);
+		if ((float)(unknownCount)/validCells > frontierThreshold){
+			return false;
+		}
+	}
+
+	if (unknownCount == 0){
+		//ROS_INFO("(%d,%d) rejected!", cx_,cy_);
+		return false;
+	}
+	return true;
+}
+
 
 void Environment::updateRobotPose(geometry_msgs::PoseStamped currentPose_){
 	currentPose = currentPose_;
@@ -264,11 +345,17 @@ void Environment::resetDiscountGrid(){
 	}
 }
 
+void Environment::resetFrontierGrid(){
+	for (auto coord: prevFrontierCells){
+		frontierGrid[coord[0]][coord[1]] = 0;
+	}
+}
+
 unsigned char Environment::Environment::costOfCell(int cx_, int cy_, std::vector<int> pos_){
 	// only interested in unknown cells, need to convert sqrt to int
 	// instead of using euclidean distance, use ros navigation global planner as a plugin
-	//ROS_INFO("cx: %d, cy:%d, cost: %d", cx_, cy_, (unsigned char) 254* (int) sqrt(((pos_[0]-cx_)*(pos_[0]-cx_) + (pos_[1]-cy_)*(pos_[1]-cy_)))/maxDist);
-	return (unsigned char) 254* (int) sqrt(((pos_[0]-cx_)*(pos_[0]-cx_) + (pos_[1]-cy_)*(pos_[1]-cy_)))/maxDist;
+	//ROS_INFO("cx: %d, cy:%d, cost: %d", cx_, cy_, (unsigned char) (254 * sqrt(((pos_[0]-cx_)*(pos_[0]-cx_) + (pos_[1]-cy_)*(pos_[1]-cy_)))/maxDist));
+	return (unsigned char) (254 * sqrt(((pos_[0]-cx_)*(pos_[0]-cx_) + (pos_[1]-cy_)*(pos_[1]-cy_)))/maxDist);
 }
 
 //The greater the value, the closer the cell is to neighbouring cells
