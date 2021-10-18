@@ -1,5 +1,6 @@
 #include <stdio.h>
 #include <math.h>
+#include <ros/ros.h>
 #include <tf2/convert.h>
 #include <tf2_ros/transform_listener.h>
 #include <tf2_ros/buffer.h>

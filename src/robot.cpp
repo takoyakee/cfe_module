@@ -13,15 +13,15 @@ Robot::Robot(std::string robotName_, std::string robotMapFrame_, std::string glo
     processingGoal = false;
     goalReached = false;
     commRadius = 30;
-    failedFrontiers = 0;
+    failedRun = 0;
     frontiersExplored = 0;
+    robotEnvironment.globalFrame = globalFrame;
 }
 
 void Robot::explore(){
 	ROS_INFO("Robot.explore() called!");
-	if (robotEnvironment.isEnvironmentInitialised()){
+	if (robotEnvironment.isEnvUpdated()){
 		bool successfulCandidate = getFrontierCandidates();
-		ROS_INFO("Success: %d", successfulCandidate);
 		if (!processingGoal && successfulCandidate){
 			updateGoal(frontierCandidate.pose);
 			updateMBG();
@@ -33,6 +33,15 @@ void Robot::explore(){
 		robotEnvironment.bUpdateRobotPose = false;
 		robotEnvironment.bUpdateRobotTeamPoses = false;
 	}
+}
+
+bool Robot::getFrontierCandidates(){
+	ROS_INFO("Getting Frontier Candidates...");
+	//Feed latest currentPose and TeamPose
+	frontierCandidate = robotEnvironment.returnFrontierChoice();
+	if (frontierCandidate.pose.header.frame_id.empty()){
+		return false;
+	} return true;
 }
 
 void Robot::teamGoalCallBack(const geometry_msgs::PoseStamped& msg){
@@ -61,16 +70,7 @@ void Robot::mapCallBack(const nav_msgs::OccupancyGrid::ConstPtr& msg){
 
 }
 
-bool Robot::getFrontierCandidates(){
-	ROS_INFO("Getting Frontier Candidates...");
-	//Feed latest currentPose and TeamPose
-	updateEnvTeamPose();
-	updateEnvCurrentPose();
-	frontierCandidate = robotEnvironment.returnFrontierChoice();
-	if (frontierCandidate.pose.header.frame_id.empty()){
-		return false;
-	} return true;
-}
+
 
 geometry_msgs::PoseStamped Robot::Robot::getCurrentPose(){
 	ROS_INFO("Getting current pose");
@@ -113,8 +113,18 @@ void Robot::updateProcessingGoal(bool processingGoal_){
 }
 
 void Robot::updateExplorationResults(int failed, int succeeded){
-	failedFrontiers += failed;
+	failedRun += failed;
 	frontiersExplored += succeeded;
+}
+
+void Robot::updateFailedFrontiers(geometry_msgs::PoseStamped pose){
+	failedFrontiers.push_back(pose);
+	updateEnvFailed();
+
+}
+
+void Robot::updateEnvFailed(){
+	robotEnvironment.updateFailedFrontiers(failedFrontiers);
 }
 
 bool Robot::updateGoal(geometry_msgs::PoseStamped goalPose_){
@@ -145,12 +155,14 @@ geometry_msgs::PoseStamped Robot::convertToRobotFrame(geometry_msgs::PoseStamped
     geometry_msgs::TransformStamped transformStamped;
     geometry_msgs::PoseStamped rfPose;
     try {
+    	ROS_INFO("RMF: %s, GF: %s", robotMapFrame.c_str(), globalFrame.c_str());
         transformStamped = buffer.lookupTransform(robotMapFrame, globalFrame, ros::Time(0), ros::Duration(3.0));
     } catch (tf2::TransformException &e) {
     	ROS_WARN("Error with transform");
     }
     //transform input pose_ to rfPose
     tf2::doTransform(pose_, rfPose, transformStamped);
+    ROS_INFO("Transformed pose: %f, %f", rfPose.pose.position.x, rfPose.pose.position.y);
     return rfPose;
 }
 

@@ -7,6 +7,8 @@
 #include <fyp/functions.h>
 #include <queue>
 #include <visualization_msgs/Marker.h>
+#include <iostream>
+#include <fstream>
 
 #ifndef FYP_INCLUDE_FYP_ENVIRONMENT_H_
 #define FYP_INCLUDE_FYP_ENVIRONMENT_H_
@@ -14,6 +16,7 @@
 class Environment {
 
 	public:
+		enum kcells{TL=1, T=2, TR = 3, L=4, R=6, BL=7, B=8, BR=9} ;
 
 		struct Frontier {
 			int x;
@@ -28,71 +31,51 @@ class Environment {
 		Environment();
 		~Environment();
 
+		std::string globalFrame;
 		int envWidth;
 		int envHeight;
+		bool bUpdateRobotPose;
+		bool bUpdateRobotTeamPoses;
 
 		//Current resolution: 0.1 (0.1m/cell)
 		nav_msgs::OccupancyGrid occupancyGrid;
 
-
-		//Poses to help in cost/discount calculations
-		//todo: Consider keeping track of robot names
 		geometry_msgs::PoseStamped goalPose;
 		geometry_msgs::PoseStamped currentPose;
-		//robotTeamPose should be robotTeamGoalPose
 		std::vector<geometry_msgs::PoseStamped> robotTeamPoses;
+		std::vector<std::vector<int>> failedCells;
 
-		bool bUpdateRobotPose;
-		bool bUpdateRobotTeamPoses;
-
-		bool isEnvironmentInitialised();
+		Frontier returnFrontierChoice();
+		bool isEnvUpdated();
 		void updateOccupancyGrid(const nav_msgs::OccupancyGrid::ConstPtr& occupancyGrid_);
 		void updateRobotPose(geometry_msgs::PoseStamped currentPose_);
-		void waitForRobotPose();
 		void updateRobotTeamPoses(std::map<std::string, geometry_msgs::PoseStamped> robotTeamPoses_);
-		void waitForRobotTeamPoses();
+		void updateFailedFrontiers(std::vector<geometry_msgs::PoseStamped> failedFrontiers_);
+
 		//todo: combine cost and discount grid, TO have updateInformationGrids ( have discount and i.g.)
 		//discount to consider other robots' allocated goals
-
-		//Updates selected cells (not entire map)
-		bool updateCostCells();
-		bool updateDiscountCells();
-		std::vector<std::vector<int>> getFrontierCells();
-		bool isFrontier(int cx_, int cy_);
-		Frontier returnFrontierChoice();
-		unsigned char evaluateUtility(int cx_, int cy_);
-
-
-		unsigned char costOfCell(int cellRow, int cellCol, std::vector<int> pos_);
-
-		//Resetting costGrid and discountGrid values
-		void resetCostGrid();
-		void resetDiscountGrid();
-		void resetFrontierGrid();
-		visualization_msgs::Marker visualiseFrontier();
-
 		//To keep track of other robot's location
 
 	private:
-		//initialising every Grid
-		void initialiseGrids();
-		void deleteGrids();
-
-		// Storing previously changed cells
-		std::vector<std::vector<int>> prevFrontierCells;
-		std::vector<std::vector<int>> prevDCCells;
+		ros::NodeHandle nh_;
+		ros::Publisher marker_pub;
 
 		//Grids for frontier allocations
 		char ** occupancy2D;
 		double** discountGrid;
+		double** informationGrid;
 		unsigned char** costGrid;
-		//frontier Grids
 		unsigned char** frontierGrid;
 
-		int maxDist;
-		std::string globalFrame;
+		// Storing previously changed cells
+		std::vector<std::vector<int>> prevFrontierCells;
+		std::vector<std::vector<int>> prevDCCells;
 		std::vector<std::vector<int>> circleCorners;
-		std::vector<std::vector<int>> neighbourCells;
+		std::map<int,std::vector<int>> kernel;
+
+
+		int maxDist;
+
 
 		//Hyper parameters
 		int searchRadius;
@@ -102,15 +85,45 @@ class Environment {
 		float cweight;
 		float dweight;
 		float expirationTime;
+		float frontierThreshold;
+
+		void initialiseGrids();
+		void deleteGrids();
+		void resetGrids();
+		visualization_msgs::Marker visualiseFrontier();
+
+		void waitForRobotPose();
+		void waitForRobotTeamPoses();
 
 		//Internal conversion functions
 		bool inMap(int cx_, int cy_);
+		bool isEdge(int cx_, int cy_);
+		bool inFailed(int cx_, int cy_);
 
+
+		//**************IMPORTANT*********************//
+		//Utility evaluation
+		std::vector<std::vector<int>> getFrontierCells();
+		bool updateCostCells();
+		bool updateDiscountCells();
+		bool updateIGCells();
+		bool isFrontier(int cx_, int cy_);
+
+
+		unsigned char costOfCell(int cx_, int cy_, std::vector<int> pos_);
+		double distToDiscount(int dist);
+		double infoOfCell(int cx_, int cy_);
+		int cap(int value_);
+
+		unsigned char evaluateUtility(int cx_, int cy_);
+		double edgeGrad(int cx_, int cy_);
 		int coordToIndex(int cx_, int cy_);
 		std::vector<float> coordToPoint(int cx_, int cy_);
 		std::vector<int> pointToCoord(float mx_, float my_);
 		std::vector<int> indexToCoord(int index_);
-		double distToDiscount(int dist);
+		geometry_msgs::PoseStamped coordToPS (int cx_, int cy_);
+
+
 };
 
 

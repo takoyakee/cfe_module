@@ -157,6 +157,14 @@ Visualization Manager:
       Topic: /robot_2/move_base_node/NavfnROS/plan
       Unreliable: false
       Value: true
+    - Class: rviz/Marker
+      Enabled: true
+      Marker Topic: /detected_frontiers
+      Name: Marker
+      Namespaces:
+        basic_shapes: true
+      Queue Size: 100
+      Value: true
   Enabled: true
   Global Options:
     Background Color: 48; 48; 48
@@ -185,16 +193,16 @@ Visualization Manager:
   Views:
     Current:
       Class: rviz/Orbit
-      Distance: 59.2862663269043
+      Distance: 25.6066951751709
       Enable Stereo Rendering:
         Stereo Eye Separation: 0.05999999865889549
         Stereo Focal Distance: 1
         Swap Stereo Eyes: false
         Value: false
       Focal Point:
-        X: 3.0112268924713135
-        Y: 1.8549364805221558
-        Z: -1.1560041904449463
+        X: 1.831930160522461
+        Y: 3.265322685241699
+        Z: -1.154831886291504
       Focal Shape Fixed Size: true
       Focal Shape Size: 0.05000000074505806
       Invert Z Axis: false
@@ -203,7 +211,7 @@ Visualization Manager:
       Pitch: 1.5697963237762451
       Target Frame: <Fixed Frame>
       Value: Orbit (rviz)
-      Yaw: 0.00539958942681551
+      Yaw: 6.273584842681885
     Saved: ~
 Window Geometry:
   Displays:

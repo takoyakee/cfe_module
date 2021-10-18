@@ -1,5 +1,5 @@
-#include <ros/ros.h>
 #include <fyp/robot.h>
+#include <fyp/environment.h>
 #include <move_base_msgs/MoveBaseAction.h>
 #include <actionlib/client/simple_action_client.h>
 
@@ -39,19 +39,25 @@ int main(int argc, char **argv)
     while (ros::ok()){
     	robot.explore();
     	actionlib::SimpleClientGoalState rStatus = moveBaseClient.getState();
+    	ROS_INFO("***ROBOT STATE***: %s", rStatus.getText().c_str());
+    	ROS_INFO("***ROBOT STATNUME***: %d", rStatus.state_);
     	if (!robot.processingGoal && robot.hasGoal){
     		moveBaseClient.sendGoal(robot.moveBaseGoal);
     		goalPub.publish(robot.goalPose);
-    	} else if (rStatus == actionlib::SimpleClientGoalState::ACTIVE){
+    	}
+    	if (rStatus.state_ == actionlib::SimpleClientGoalState::ACTIVE){
+    		ROS_INFO("Active");
     		robot.updateProcessingGoal(true);
     		robot.hasGoal = false;
 
-    	} else if (rStatus == actionlib::SimpleClientGoalState::SUCCEEDED){
+    	} else if (rStatus.state_ == actionlib::SimpleClientGoalState::SUCCEEDED){
     		robot.updateProcessingGoal(false);
     		robot.updateExplorationResults(0, 1);
        		robot.hasGoal = false;
 
-    	} else if (rStatus == actionlib::SimpleClientGoalState::ABORTED){
+    	} else if (rStatus.state_ == actionlib::SimpleClientGoalState::ABORTED){
+    		ROS_INFO("Aborted");
+    		robot.updateFailedFrontiers(robot.goalPose);
     		robot.updateProcessingGoal(false);
     		robot.updateExplorationResults(1, 0);
        		robot.hasGoal = false;

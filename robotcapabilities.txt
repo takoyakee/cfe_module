@@ -1,3 +1,6 @@
+github: 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
+
+
 Current capabilities:
 Node is launchable with param names
 - Subscribe to tf tree and know its current location
@@ -6,11 +9,12 @@ Node is launchable with param names
 - Robot class to include function that discount cells near other robots
 - Robot class to include function deciding which frontier to explore
 - (and know location of other robots)
+- actionbaselib client!!!!!! to send goals (URGENT)
+- visualise top 10 Frontier Choices!!! (on Rviz)
 
 To do capabilities:
-- actionbaselib client!!!!!! to send goals (URGENT)
+- update isFrontier to edge detection
 - discount cells properly (the more the robots are near, the higher the discount)
-- visualise top 10 Frontier Choices!!! (on Rviz)
 - DEFINE INFORMATION GAIN IN TERMS OF UNKNOWN CELL IN VICNITY (updateInformationGain) (INTERMEDIATE)
 - reevaluate naming (INTERMEDIATE)
 - Way to test efficiency of algorithm (INTERMEDIATE)

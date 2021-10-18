@@ -16,6 +16,8 @@ find_package(catkin REQUIRED COMPONENTS
   grid_map_core
   grid_map_msgs
   actionlib_msgs
+
+  
 )
 
 ## System dependencies are found with CMake's conventions

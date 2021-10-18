@@ -13,6 +13,7 @@ class Robot{
 
         move_base_msgs::MoveBaseGoal moveBaseGoal;
         geometry_msgs::PoseStamped goalPose;
+        std::vector<geometry_msgs::PoseStamped> failedFrontiers;
 
         //Status indicators
         bool hasGoal;
@@ -26,6 +27,7 @@ class Robot{
         void explore();
         void updateProcessingGoal(bool processingGoal_);
         void updateExplorationResults(int failed, int succeeded);
+        void updateFailedFrontiers(geometry_msgs::PoseStamped pose);
 
     private:
         //info from main
@@ -35,7 +37,7 @@ class Robot{
         std::string robotMapFrame;
         std::string frontierGoal;
 
-        int failedFrontiers;
+        int failedRun;
         int frontiersExplored;
 
         //hyper parameter
@@ -57,6 +59,7 @@ class Robot{
         std::vector<geometry_msgs::PoseStamped> getTeamPoses();
         void updateEnvCurrentPose();
         void updateEnvTeamPose();
+        void updateEnvFailed();
         bool getFrontierCandidates();
 
 

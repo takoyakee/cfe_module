@@ -5,12 +5,20 @@
     <!-- start Gazebo with an empty world, but change the worldname to my predefined world-->
 
 	<env name="GAZEBO_RESOURCE_PATH" value="$(find rrt_exploration_tutorials)/launch/includes/meshes"/>
-	<!-- start Gazebo with an empty world -->
+	<!-- start Gazebo with an empty world 
 	<include file="$(find gazebo_ros)/launch/empty_world.launch">
 		<arg name="use_sim_time" value="true"/>
 		<arg name="debug" value="false"/>
 		<arg name="world_name" value="$(find rrt_exploration_tutorials)/launch/includes/worlds/MTR.world"/>
 	</include>
+	-->
+
+    <!-- start Gazebo with an empty world, but change the worldname to my predefined world-->
+    <include file="$(find gazebo_ros)/launch/empty_world.launch">
+        <arg name="use_sim_time" value="true"/>
+        <arg name="debug" value="false"/>
+        <arg name="world_name" value="$(find fyp)/launch/includes/worlds/my_maze.world"/>
+    </include>
 
 
 	<!-- spawn robot 1-->
