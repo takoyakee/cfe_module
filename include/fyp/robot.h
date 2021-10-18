@@ -19,6 +19,7 @@ class Robot{
         bool hasGoal;
         bool processingGoal; //represents that Robot is in motion
         bool goalReached;
+        Environment robotEnvironment;
 
         void mapCallBack(const nav_msgs::OccupancyGrid::ConstPtr& msg);
         void teamGoalCallBack(const geometry_msgs::PoseStamped& msg);
@@ -27,7 +28,7 @@ class Robot{
         void explore();
         void updateProcessingGoal(bool processingGoal_);
         void updateExplorationResults(int failed, int succeeded);
-        void updateFailedFrontiers(geometry_msgs::PoseStamped pose);
+        void addFailedFrontiers(geometry_msgs::PoseStamped pose);
 
     private:
         //info from main
@@ -37,17 +38,19 @@ class Robot{
         std::string robotMapFrame;
         std::string frontierGoal;
 
+        int teamSize;
         int failedRun;
         int frontiersExplored;
 
         //hyper parameter
+
         float commRadius;
 
         geometry_msgs::PoseStamped currentPose;
         std::map<std::string, geometry_msgs::PoseStamped> teamPose;
         std::map<std::string, geometry_msgs::PoseStamped> teamGoalPose;
         Environment::Frontier frontierCandidate{0,0,0};
-        Environment robotEnvironment;
+
 
         //get goal position, get other robots position if within communication range, exchange map info
         bool updateGoal(geometry_msgs::PoseStamped goalPose_);
@@ -55,10 +58,11 @@ class Robot{
         geometry_msgs::PoseStamped convertToRobotFrame(geometry_msgs::PoseStamped pose_);
 
         geometry_msgs::PoseStamped getCurrentPose();
-        bool inCommunicationRange(std::string robotFrameName);
-        std::vector<geometry_msgs::PoseStamped> getTeamPoses();
+        geometry_msgs::PoseStamped inCommunicationRange(std::string robotFrameName);
+        void getTeamPoses();
         void updateEnvCurrentPose();
-        void updateEnvTeamPose();
+        void updateEnvTeamGoal();
+        void updateEnvRobotTeamPose();
         void updateEnvFailed();
         bool getFrontierCandidates();
 

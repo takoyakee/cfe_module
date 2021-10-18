@@ -16,6 +16,7 @@ Robot::Robot(std::string robotName_, std::string robotMapFrame_, std::string glo
     failedRun = 0;
     frontiersExplored = 0;
     robotEnvironment.globalFrame = globalFrame;
+    teamSize = 2;
 }
 
 void Robot::explore(){
@@ -27,11 +28,19 @@ void Robot::explore(){
 			updateMBG();
 			hasGoal = true;
 		}
-	} else {
+	} else if (robotEnvironment.bUpdate){
 		updateEnvCurrentPose();
-		updateEnvTeamPose();
+		updateEnvTeamGoal();
+		updateEnvRobotTeamPose();
+		robotEnvironment.bUpdate = false;
+	}
+	else {
+		updateEnvCurrentPose();
+		updateEnvTeamGoal();
+		updateEnvRobotTeamPose();
 		robotEnvironment.bUpdateRobotPose = false;
-		robotEnvironment.bUpdateRobotTeamPoses = false;
+		robotEnvironment.bUpdateTeamGoalPose = false;
+
 	}
 }
 
@@ -45,15 +54,15 @@ bool Robot::getFrontierCandidates(){
 }
 
 void Robot::teamGoalCallBack(const geometry_msgs::PoseStamped& msg){
-	ROS_INFO("TEAM GOAL CALL BACK!");
 	//only consider if pose published is not own (e.g. robot_1/map)
 	if (!msg.header.frame_id.empty()){
 		std::string poseMapFrame = msg.header.frame_id.substr(1, poseMapFrame.length()-2);
 		std::string robotFrameName =  eraseSubStr(poseMapFrame, "/map") + "/base_link"; // robot_1/base_link -> to review and avoid hardcode
-		//ROS_INFO("robotMapFrame: %s vs received goal: %s", robotMapFrame.c_str(), poseMapFrame.c_str());
-		if (poseMapFrame.compare(robotMapFrame) != 1){
-			if (inCommunicationRange(robotFrameName)){
-				ROS_INFO("Added to teamGoalPose!");
+		if (poseMapFrame.compare(robotMapFrame) != 0){
+			if (!inCommunicationRange(robotFrameName).header.frame_id.empty()){
+				ROS_INFO("Goal from %s is registered", poseMapFrame);
+
+				//e.g. {robot_2/map, PoseStamped}
 				teamGoalPose[poseMapFrame] = msg;
 			}
 		}
@@ -66,8 +75,6 @@ void Robot::mapCallBack(const nav_msgs::OccupancyGrid::ConstPtr& msg){
 	if (msg->data.size()> 0){
 		robotEnvironment.updateOccupancyGrid(msg);
 	}
-	ROS_INFO("ALTERED map size: %d of dimension (%d x %d) ",robotEnvironment.occupancyGrid.data.size(),robotEnvironment.envWidth, robotEnvironment.envHeight);
-
 }
 
 
@@ -89,13 +96,17 @@ geometry_msgs::PoseStamped Robot::Robot::getCurrentPose(){
 
 }
 
-bool Robot::inCommunicationRange(std::string robotFrameName){
+/*
+ * Returns PoseStamped of robot with robotFrameName if within communication range
+ */
+geometry_msgs::PoseStamped Robot::inCommunicationRange(std::string robotFrameName){
 	//todo: Obtain other robots poses via tf, evaluate distance before appending to vector
 	// two ways: calculate norm (TRY FIRST) OR listen twice
 	tf2_ros::Buffer buffer;
 	tf2_ros::TransformListener tfl(buffer);
 	geometry_msgs::TransformStamped transformStamped;
 	geometry_msgs::PoseStamped tempPose, otherPose;
+	geometry_msgs::PoseStamped emptyPose;
 	try {
 		transformStamped = buffer.lookupTransform(globalFrame, robotFrameName, ros::Time(0), ros::Duration(3.0));
 	} catch (tf2::TransformException &e) {
@@ -103,8 +114,8 @@ bool Robot::inCommunicationRange(std::string robotFrameName){
 	}
 	tf2::doTransform(tempPose, otherPose, transformStamped);
 	getCurrentPose();
-	if (norm(otherPose,currentPose) <= commRadius){return true;}
-	return false;
+	if (norm(otherPose,currentPose) <= commRadius){return otherPose;}
+	return emptyPose;
 }
 
 
@@ -117,7 +128,7 @@ void Robot::updateExplorationResults(int failed, int succeeded){
 	frontiersExplored += succeeded;
 }
 
-void Robot::updateFailedFrontiers(geometry_msgs::PoseStamped pose){
+void Robot::addFailedFrontiers(geometry_msgs::PoseStamped pose){
 	failedFrontiers.push_back(pose);
 	updateEnvFailed();
 
@@ -138,8 +149,13 @@ void Robot::updateEnvCurrentPose(){
 	robotEnvironment.updateRobotPose(currentPose);
 }
 
-void Robot::updateEnvTeamPose(){
-	robotEnvironment.updateRobotTeamPoses(teamGoalPose);
+void Robot::updateEnvTeamGoal(){
+	robotEnvironment.updateTeamGoalPose(teamGoalPose);
+}
+
+void Robot::updateEnvRobotTeamPose(){
+	getTeamPoses();
+	robotEnvironment.updateRobotTeamPose(teamPose);
 }
 
 
@@ -178,35 +194,24 @@ geometry_msgs::PoseStamped Robot::convertToRobotFrame(geometry_msgs::PoseStamped
 	return false;
 }*/
 
-/*std::vector<geometry_msgs::PoseStamped> Robot::getTeamPoses(){
+void Robot::getTeamPoses(){
 	teamPose.clear();
 	for (int i = 1; i < teamSize+1; i++){
-		std::string tempName = "robot_" + std::to_string(i);
-		if (tempName.compare(robotName) == 0){
+		geometry_msgs::PoseStamped otherPose;
+		std::string otherRobotName = "robot_" + std::to_string(i);
+		if (otherRobotName.compare(robotName) == 0){
 			continue;
 		}
 		// todo: avoid hard code
-		std::string targetFrame = tempName + "/base_link";
+		std::string targetFrame = otherRobotName + "/base_link";
+		otherPose = inCommunicationRange(targetFrame);
 
-		//todo: Obtain other robots poses via tf, evaluate distance before appending to vector
-		// two ways: calculate norm (TRY FIRST) OR listen twice
-	    tf2_ros::Buffer buffer;
-	    tf2_ros::TransformListener tfl(buffer);
-	    geometry_msgs::TransformStamped transformStamped;
-	    geometry_msgs::PoseStamped tempPose;
-	    geometry_msgs::PoseStamped otherPose;
-	    try {
-	        transformStamped = buffer.lookupTransform(globalFrame, targetFrame, ros::Time(0), ros::Duration(3.0));
-	    } catch (tf2::TransformException &e) {
-	    	ROS_WARN("Error with transform");
-	    }
-	    tf2::doTransform(tempPose, otherPose, transformStamped);
-	    getCurrentPose();
-	    if (norm(otherPose,currentPose) <= commRadius) {teamPose.push_back(otherPose);}
+		ROS_INFO("Obtained %s 's pose: %f, %f", otherRobotName.c_str(), otherPose.pose.position.x, otherPose.pose.position.y);
+
+		// e.g. {robot_2: PoseStamped}
+		teamPose[otherRobotName] = otherPose;
 	}
-	return teamPose;
-
-}*/
+}
 
 
 

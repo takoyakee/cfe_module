@@ -11,9 +11,10 @@ Node is launchable with param names
 - (and know location of other robots)
 - actionbaselib client!!!!!! to send goals (URGENT)
 - visualise top 10 Frontier Choices!!! (on Rviz)
+- update isFrontier to edge detection
 
 To do capabilities:
-- update isFrontier to edge detection
+
 - discount cells properly (the more the robots are near, the higher the discount)
 - DEFINE INFORMATION GAIN IN TERMS OF UNKNOWN CELL IN VICNITY (updateInformationGain) (INTERMEDIATE)
 - reevaluate naming (INTERMEDIATE)

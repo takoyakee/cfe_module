@@ -24,7 +24,8 @@ Environment::Environment(){ // @suppress("Class members should be properly initi
 				{4,{-1,0}}, 		   {6,{1,0}},
 				{7,{-1,-1}}, {8,{0,-1}}, {9,{1,-1}} };
 	bUpdateRobotPose = true;
-	bUpdateRobotTeamPoses = true;
+	bUpdateTeamGoalPose = true;
+	bUpdate = false;
 	discountGrid = NULL;
 	costGrid = NULL;
 	frontierGrid = NULL;
@@ -38,16 +39,13 @@ Environment::~Environment(){
 
 //Vector is sorted accordingly to utility
 Environment::Frontier Environment::returnFrontierChoice(){
-	ROS_INFO("Returning frontier choice...");
 	getFrontierCells();
 	bool discounted = updateDiscountCells();
 	bool costed = updateCostCells();
 
 	if (!discounted || !costed){
-		ROS_INFO("Discount: %d, Cost: %d", discounted, costed);
 		return Frontier(0,0,0);
 	}
-
 
     auto cmp = [](Frontier left, Frontier right) { return (left.utility) < (right.utility); };
     std::priority_queue<Frontier, std::vector<Frontier>, decltype(cmp)> pq(cmp);
@@ -56,9 +54,6 @@ Environment::Frontier Environment::returnFrontierChoice(){
 		Frontier fcell(idx[0],idx[1],utility_);
 		pq.push(fcell);
 	}
-
-	ROS_INFO("Finished finding candidate");
-
 
 	ros::Time timenow = ros::Time::now();
 	//todo: shouldn't discard the value
@@ -77,8 +72,6 @@ Environment::Frontier Environment::returnFrontierChoice(){
 	ROS_INFO("Goal in world (%f,%f), in map (%d,%d)", winner.pose.pose.position.x , winner.pose.pose.position.y, winner.x, winner.y);
 
 	resetGrids();
-
-
 	return winner;
 }
 
@@ -93,7 +86,7 @@ void Environment::Environment::updateOccupancyGrid(const nav_msgs::OccupancyGrid
 		maxDist = (int)(sqrt(pow(envWidth,2)+pow(envHeight,2)));
 		initialiseGrids();
 	} else if (occupancyGrid_->data.size() != occupancyGrid.data.size()){
-		ROS_INFO("Grids resetted!");
+		ROS_INFO("** Grids resetted! ***");
 		deleteGrids();
 		occupancyGrid = *occupancyGrid_;
 		envWidth = occupancyGrid.info.width;
@@ -147,7 +140,7 @@ bool Environment::Environment::updateCostCells(){
 	//sensitive to simtime
 	ros::Duration timePassed = ros::Time::now() - poseTime ;
 	ros::Time rosTime = ros::Time(0);
-	ROS_INFO("Current time: %f, PoseTime: %f, rosTime: %f", ros::Time::now().toSec(), poseTime.toSec(),rosTime.toSec());
+	//ROS_INFO("Current time: %f, PoseTime: %f, rosTime: %f", ros::Time::now().toSec(), poseTime.toSec(),rosTime.toSec());
 	if (timePassed.toSec() > expirationTime){
 		waitForRobotPose();
 		return false;
@@ -164,16 +157,59 @@ bool Environment::Environment::updateCostCells(){
 
 bool Environment::Environment::updateDiscountCells(){
 	prevDCCells.clear();
-	if (robotTeamPoses.size() == 0){
-		ROS_INFO("No Team Received.");
+	if (teamGoalPose.size() == 0 && teamPose.size() == 0){
+		ROS_INFO("No info on other robots");
 		return true;
-	} else {
+	} else if (teamGoalPose.size() > 0){
 		// neighbors pose is in meters
-		for (auto robotPose : robotTeamPoses){
+		for (auto rGoal : teamGoalPose){
+			ros::Time poseTime = rGoal.header.stamp;
+			ros::Duration timePassed = ros::Time::now() - poseTime;
+			if (timePassed.toSec() > expirationTime){
+				waitForTeamGoalPose();
+				return false;
+			}
+			std::vector<int> robotCoord = pointToCoord(rGoal.pose.position.x, rGoal.pose.position.y);
+			int xc = robotCoord[0];
+			int yc = robotCoord[1];
+			//consider first quadrant, can translate after
+			for (int x = 0; x <= searchRadius; x++){
+				for (int y = 0; y <= x; y++){
+					if (x*x + y*y <= searchRadius * searchRadius){
+						int dist = x + y; //taking Manhattan distance
+						for (std::vector<int> cell : circleCorners) {
+							int x_ = xc+cell[0]*x, y_ = yc+cell[1]*y;
+							if (inMap(x_,y_) && frontierGrid[x_][y_] == 1){
+								if (discountGrid[x_][y_] == 0){
+									discountGrid[x_][y_] = distToDiscount(dist);
+								} else {
+									//inspired by alpha blending kekek
+									discountGrid[x_][y_] = discountGrid[x_][y_]  + (1-discountGrid[x_][y_])*distToDiscount(dist);
+								}
+								prevDCCells.push_back({x_,y_});
+							}
+							x_ = xc+cell[0]*y, y_ = yc+cell[1]*x;
+							if (inMap(x_,y_) && frontierGrid[x_][y_] == 1){
+								if (discountGrid[x_][y_] == 0){
+									discountGrid[x_][y_] = distToDiscount(dist);
+								} else {
+									discountGrid[x_][y_] = discountGrid[x_][y_]  + (1-discountGrid[x_][y_])*distToDiscount(dist);
+								}
+								prevDCCells.push_back({x_,y_});
+							}
+						}
+					}
+				}
+			}
+		}
+		return true;
+	} else if (teamPose.size() > 0) {
+		// neighbors pose is in meters
+		for (auto robotPose : teamPose){
 			ros::Time poseTime = robotPose.header.stamp;
 			ros::Duration timePassed = ros::Time::now() - poseTime;
 			if (timePassed.toSec() > expirationTime){
-				waitForRobotTeamPoses();
+				waitForTeamGoalPose();
 				return false;
 			}
 			std::vector<int> robotCoord = pointToCoord(robotPose.pose.position.x, robotPose.pose.position.y);
@@ -211,6 +247,7 @@ bool Environment::Environment::updateDiscountCells(){
 		}
 		return true;
 	}
+	return true;
 
 }
 
@@ -231,12 +268,21 @@ unsigned char Environment::evaluateUtility(int cx_, int cy_){
 std::vector<std::vector<int>> Environment::getFrontierCells(){
 	//need to only return frontier cells --> get a convolution and evaluate?
 	prevFrontierCells.clear();
+	int failedCount = failedCells.size();
 	for (int i = 0; i < envWidth; i++){
 		for (int j = 0; j < envHeight; j++){
-			if (occupancyGrid.data[coordToIndex(i, j)] == -1 && isFrontier(i,j) && !inFailed(i, j) ){
-				//ROS_INFO("Fronter (%d,%d)", i,j);
-				frontierGrid[i][j] = 1;
-				prevFrontierCells.push_back({i,j});
+			if (occupancyGrid.data[coordToIndex(i, j)] == -1 && isFrontier(i,j)){
+				if (failedCount > 0) {
+					if (!inFailed(i,j)){
+						frontierGrid[i][j] = 1;
+						prevFrontierCells.push_back({i,j});
+					} else {
+						failedCount -=1;
+					}
+				} else {
+					frontierGrid[i][j] = 1;
+					prevFrontierCells.push_back({i,j});
+				}
 			}
 		}
 	}
@@ -253,11 +299,7 @@ bool Environment::isFrontier(int cx_, int cy_){
 	}
 
 	double grad = edgeGrad(cx_, cy_);
-
 	if (grad > frontierThreshold){
-		if ( cx_== 51 && cy_ == 51){
-			ROS_INFO("MY GRAD VALUE IS %f", grad);
-		}
 		return true;
 	}
 	return false;
@@ -300,17 +342,26 @@ void Environment::waitForRobotPose(){
 	bUpdateRobotPose = true;
 }
 
-void Environment::updateRobotTeamPoses(std::map<std::string, geometry_msgs::PoseStamped> robotTeamPoses_){
+void Environment::updateTeamGoalPose(std::map<std::string, geometry_msgs::PoseStamped> teamGoalPose_){
 	std::vector<geometry_msgs::PoseStamped> poseVector;
-	for(auto& pose: robotTeamPoses_) {
+	for(auto& pose: teamGoalPose_) {
 		poseVector.push_back(pose.second);
 	}
-	robotTeamPoses = std::move(poseVector);
+	teamGoalPose = std::move(poseVector);
 }
 
-void Environment::waitForRobotTeamPoses(){
-	bUpdateRobotTeamPoses = true;
+void Environment::waitForTeamGoalPose(){
+	bUpdateTeamGoalPose = true;
 }
+
+void Environment::updateRobotTeamPose(std::map<std::string, geometry_msgs::PoseStamped> teamPose_){
+	std::vector<geometry_msgs::PoseStamped> poseVector;
+	for(auto& pose: teamPose_) {
+		poseVector.push_back(pose.second);
+	}
+	teamPose = std::move(poseVector);
+}
+
 
 void Environment::updateFailedFrontiers(std::vector<geometry_msgs::PoseStamped> failedFrontiers_){
 	for (auto ff: failedFrontiers_){
@@ -330,6 +381,9 @@ void Environment::resetGrids(){
 	for (auto coord : prevDCCells){
 		discountGrid[coord[0]][coord[1]] = 0;
 	}
+
+	prevFrontierCells.clear();
+	prevDCCells.clear();
 }
 
 unsigned char Environment::Environment::costOfCell(int cx_, int cy_, std::vector<int> pos_){
@@ -339,10 +393,10 @@ unsigned char Environment::Environment::costOfCell(int cx_, int cy_, std::vector
 	return (unsigned char) (254 * sqrt(((pos_[0]-cx_)*(pos_[0]-cx_) + (pos_[1]-cy_)*(pos_[1]-cy_)))/maxDist);
 }
 
-//The greater the value, the closer the cell is to neighbouring cells
+//Larger discount for nearing cells
 double Environment::Environment::distToDiscount(int dist){
 	//return exp(-1*discountMult * dist);
-	return dist/searchRadius ;
+	return 1-(dist/searchRadius);
 
 }
 
@@ -396,7 +450,7 @@ std::vector<int> Environment::Environment::pointToCoord(float mx_, float my_){
 }
 
 bool Environment::isEnvUpdated(){
-	return !bUpdateRobotPose && !bUpdateRobotTeamPoses && (occupancyGrid.data.size()>0);
+	return !bUpdateRobotPose && !bUpdateTeamGoalPose && (occupancyGrid.data.size()>0);
 }
 
 bool Environment::inMap(int cx_, int cy_){
@@ -410,6 +464,7 @@ bool Environment::isEdge(int cx_, int cy_){
 bool Environment::inFailed(int cx_, int cy_){
 	for (auto fc: failedCells){
 		if (fc[0] == cx_ && fc[1] == cy_){
+			ROS_INFO("Failed cell: (%d,%d)", cx_,cy_);
 			return true;
 		}
 	}

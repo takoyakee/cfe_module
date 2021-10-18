@@ -35,21 +35,24 @@ class Environment {
 		int envWidth;
 		int envHeight;
 		bool bUpdateRobotPose;
-		bool bUpdateRobotTeamPoses;
+		bool bUpdateTeamGoalPose;
+		bool bUpdate;
 
 		//Current resolution: 0.1 (0.1m/cell)
 		nav_msgs::OccupancyGrid occupancyGrid;
 
 		geometry_msgs::PoseStamped goalPose;
 		geometry_msgs::PoseStamped currentPose;
-		std::vector<geometry_msgs::PoseStamped> robotTeamPoses;
+		std::vector<geometry_msgs::PoseStamped> teamGoalPose;
+		std::vector<geometry_msgs::PoseStamped> teamPose;
 		std::vector<std::vector<int>> failedCells;
 
 		Frontier returnFrontierChoice();
 		bool isEnvUpdated();
 		void updateOccupancyGrid(const nav_msgs::OccupancyGrid::ConstPtr& occupancyGrid_);
 		void updateRobotPose(geometry_msgs::PoseStamped currentPose_);
-		void updateRobotTeamPoses(std::map<std::string, geometry_msgs::PoseStamped> robotTeamPoses_);
+		void updateTeamGoalPose(std::map<std::string, geometry_msgs::PoseStamped> teamGoalPose_);
+		void updateRobotTeamPose(std::map<std::string, geometry_msgs::PoseStamped> teamPose_);
 		void updateFailedFrontiers(std::vector<geometry_msgs::PoseStamped> failedFrontiers_);
 
 		//todo: combine cost and discount grid, TO have updateInformationGrids ( have discount and i.g.)
@@ -93,7 +96,7 @@ class Environment {
 		visualization_msgs::Marker visualiseFrontier();
 
 		void waitForRobotPose();
-		void waitForRobotTeamPoses();
+		void waitForTeamGoalPose();
 
 		//Internal conversion functions
 		bool inMap(int cx_, int cy_);
