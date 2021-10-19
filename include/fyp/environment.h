@@ -7,6 +7,7 @@
 #include <fyp/functions.h>
 #include <queue>
 #include <visualization_msgs/Marker.h>
+#include <visualization_msgs/MarkerArray.h>
 #include <iostream>
 #include <fstream>
 
@@ -68,9 +69,11 @@ class Environment {
 		double** discountGrid;
 		double** informationGrid;
 		unsigned char** costGrid;
-		unsigned char** frontierGrid;
+		int** frontierGrid;
 
 		// Storing previously changed cells
+		// [key] centroid,
+		std::vector<std::vector<int>> fCentroids;
 		std::vector<std::vector<int>> prevFrontierCells;
 		std::vector<std::vector<int>> prevDCCells;
 		std::vector<std::vector<int>> circleCorners;
@@ -93,7 +96,7 @@ class Environment {
 		void initialiseGrids();
 		void deleteGrids();
 		void resetGrids();
-		visualization_msgs::Marker visualiseFrontier();
+		visualization_msgs::Marker visualizeCoords(std::vector<std::vector<int>> cells, float r, float g, float b);
 
 		void waitForRobotPose();
 		void waitForTeamGoalPose();
@@ -107,8 +110,11 @@ class Environment {
 		//**************IMPORTANT*********************//
 		//Utility evaluation
 		std::vector<std::vector<int>> getFrontierCells();
+		std::vector<int> getCentroid(std::vector<std::vector<int>> cluster_);
+		std::vector<std::vector<int>> processFrontierCells();
 		bool updateCostCells();
 		bool updateDiscountCells();
+		bool discountCells(geometry_msgs::PoseStamped pose);
 		bool updateIGCells();
 		bool isFrontier(int cx_, int cy_);
 
@@ -120,6 +126,7 @@ class Environment {
 
 		unsigned char evaluateUtility(int cx_, int cy_);
 		double edgeGrad(int cx_, int cy_);
+
 		int coordToIndex(int cx_, int cy_);
 		std::vector<float> coordToPoint(int cx_, int cy_);
 		std::vector<int> pointToCoord(float mx_, float my_);

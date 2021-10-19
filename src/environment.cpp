@@ -39,7 +39,9 @@ Environment::~Environment(){
 
 //Vector is sorted accordingly to utility
 Environment::Frontier Environment::returnFrontierChoice(){
+	fCentroids.clear();
 	getFrontierCells();
+	fCentroids = processFrontierCells();
 	bool discounted = updateDiscountCells();
 	bool costed = updateCostCells();
 
@@ -49,14 +51,13 @@ Environment::Frontier Environment::returnFrontierChoice(){
 
     auto cmp = [](Frontier left, Frontier right) { return (left.utility) < (right.utility); };
     std::priority_queue<Frontier, std::vector<Frontier>, decltype(cmp)> pq(cmp);
-	for (auto idx : prevFrontierCells){
+	for (auto idx : fCentroids){
 		unsigned char utility_ = evaluateUtility(idx[0],idx[1]);
 		Frontier fcell(idx[0],idx[1],utility_);
 		pq.push(fcell);
 	}
 
 	ros::Time timenow = ros::Time::now();
-	//todo: shouldn't discard the value
 	Frontier winner = pq.top();
 	//ROS_INFO("Candidate is at (%d, %d) with utility (%d)", bestFrontier.x, bestFrontier.y, bestFrontier.utility);
 	pq.pop();
@@ -68,8 +69,9 @@ Environment::Frontier Environment::returnFrontierChoice(){
 
 
 	winner.pose = coordToPS(winner.x, winner.y);
-
-	ROS_INFO("Goal in world (%f,%f), in map (%d,%d)", winner.pose.pose.position.x , winner.pose.pose.position.y, winner.x, winner.y);
+	ROS_INFO("Current in world (%f,%f)", currentPose.pose.position.x, currentPose.pose.position.y);
+	ROS_INFO("Goal in world (%f,%f), in map (%d,%d) with utility :%d", winner.pose.pose.position.x , winner.pose.pose.position.y,
+			winner.x, winner.y, winner.utility);
 
 	resetGrids();
 	return winner;
@@ -101,17 +103,17 @@ void Environment::Environment::initialiseGrids(){
 	discountGrid = new double* [envWidth];
 	informationGrid = new double* [envWidth];
 	costGrid = new unsigned char* [envWidth];
-	frontierGrid = new unsigned char* [envWidth];
+	frontierGrid = new int* [envWidth];
 	for(int i = 0; i < envWidth; i++) {
 	    discountGrid[i] = new double[envHeight];
 		informationGrid[i] = new double[envHeight];
 		costGrid[i] = new unsigned char[envHeight];
-		frontierGrid[i] = new unsigned char[envHeight];
+		frontierGrid[i] = new int[envHeight];
 		for (int j=0; j < envHeight; j++){
 			informationGrid[i][j] = 0;
 			discountGrid[i][j] = 0;
 			costGrid[i][j] = 0;
-			frontierGrid[i][j] = 0;
+			frontierGrid[i][j] = -1;
 		}
 	}
 }
@@ -148,12 +150,12 @@ bool Environment::Environment::updateCostCells(){
 	//FrontierGrid contains value of different cells (distance, and proximity of other robots)
 	//currently based on sensor's occupancyGrid, consider costmap
 	std::vector<int> pos = pointToCoord(currentPose.pose.position.x, currentPose.pose.position.y);
-	ROS_INFO("Current position (%d,%d)", pos[0],pos[1]);
-	for (auto idx: prevFrontierCells){
+	for (auto idx: fCentroids){
 		costGrid[idx[0]][idx[1]] = costOfCell(idx[0],idx[1],pos);
 	}
 	return true;
 }
+
 
 bool Environment::Environment::updateDiscountCells(){
 	prevDCCells.clear();
@@ -169,87 +171,45 @@ bool Environment::Environment::updateDiscountCells(){
 				waitForTeamGoalPose();
 				return false;
 			}
-			std::vector<int> robotCoord = pointToCoord(rGoal.pose.position.x, rGoal.pose.position.y);
-			int xc = robotCoord[0];
-			int yc = robotCoord[1];
-			//consider first quadrant, can translate after
-			for (int x = 0; x <= searchRadius; x++){
-				for (int y = 0; y <= x; y++){
-					if (x*x + y*y <= searchRadius * searchRadius){
-						int dist = x + y; //taking Manhattan distance
-						for (std::vector<int> cell : circleCorners) {
-							int x_ = xc+cell[0]*x, y_ = yc+cell[1]*y;
-							if (inMap(x_,y_) && frontierGrid[x_][y_] == 1){
-								if (discountGrid[x_][y_] == 0){
-									discountGrid[x_][y_] = distToDiscount(dist);
-								} else {
-									//inspired by alpha blending kekek
-									discountGrid[x_][y_] = discountGrid[x_][y_]  + (1-discountGrid[x_][y_])*distToDiscount(dist);
-								}
-								prevDCCells.push_back({x_,y_});
-							}
-							x_ = xc+cell[0]*y, y_ = yc+cell[1]*x;
-							if (inMap(x_,y_) && frontierGrid[x_][y_] == 1){
-								if (discountGrid[x_][y_] == 0){
-									discountGrid[x_][y_] = distToDiscount(dist);
-								} else {
-									discountGrid[x_][y_] = discountGrid[x_][y_]  + (1-discountGrid[x_][y_])*distToDiscount(dist);
-								}
-								prevDCCells.push_back({x_,y_});
-							}
-						}
+			std::vector<int> pos = pointToCoord(rGoal.pose.position.x, rGoal.pose.position.y);
+			for (auto fC: fCentroids){
+				float dist = (pos[0]-fC[0])*(pos[0]-fC[0]) + (pos[1]-fC[1])*(pos[1]-fC[1]);
+				if( dist<= searchRadius * searchRadius){
+					if (discountGrid[fC[0]][fC[1]] == 0){
+						discountGrid[fC[0]][fC[1]] = distToDiscount(dist);
+					} else {
+						discountGrid[fC[0]][fC[1]] = discountGrid[fC[0]][fC[1]]  + (1-discountGrid[fC[0]][fC[1]])*distToDiscount(dist);
 					}
+
 				}
 			}
 		}
-		return true;
 	} else if (teamPose.size() > 0) {
 		// neighbors pose is in meters
-		for (auto robotPose : teamPose){
-			ros::Time poseTime = robotPose.header.stamp;
+		for (auto rPose : teamPose){
+			ros::Time poseTime = rPose.header.stamp;
 			ros::Duration timePassed = ros::Time::now() - poseTime;
 			if (timePassed.toSec() > expirationTime){
 				waitForTeamGoalPose();
 				return false;
 			}
-			std::vector<int> robotCoord = pointToCoord(robotPose.pose.position.x, robotPose.pose.position.y);
-			int xc = robotCoord[0];
-			int yc = robotCoord[1];
-			//consider first quadrant, can translate after
-			for (int x = 0; x <= searchRadius; x++){
-				for (int y = 0; y <= x; y++){
-					if (x*x + y*y <= searchRadius * searchRadius){
-						int dist = x + y; //taking Manhattan distance
-						for (std::vector<int> cell : circleCorners) {
-							int x_ = xc+cell[0]*x, y_ = yc+cell[1]*y;
-							if (inMap(x_,y_) && frontierGrid[x_][y_] == 1){
-								if (discountGrid[x_][y_] == 0){
-									discountGrid[x_][y_] = distToDiscount(dist);
-								} else {
-									//inspired by alpha blending kekek
-									discountGrid[x_][y_] = discountGrid[x_][y_]  + (1-discountGrid[x_][y_])*distToDiscount(dist);
-								}
-								prevDCCells.push_back({x_,y_});
-							}
-							x_ = xc+cell[0]*y, y_ = yc+cell[1]*x;
-							if (inMap(x_,y_) && frontierGrid[x_][y_] == 1){
-								if (discountGrid[x_][y_] == 0){
-									discountGrid[x_][y_] = distToDiscount(dist);
-								} else {
-									discountGrid[x_][y_] = discountGrid[x_][y_]  + (1-discountGrid[x_][y_])*distToDiscount(dist);
-								}
-								prevDCCells.push_back({x_,y_});
-							}
-						}
+			std::vector<int> pos = pointToCoord(rPose.pose.position.x, rPose.pose.position.y);
+			for (auto fC: fCentroids){
+				float dist = (pos[0]-fC[0])*(pos[0]-fC[0]) + (pos[1]-fC[1])*(pos[1]-fC[1]);
+				if( dist<= searchRadius * searchRadius){
+					if (discountGrid[fC[0]][fC[1]] == 0){
+						discountGrid[fC[0]][fC[1]] = distToDiscount(dist);
+					} else {
+						discountGrid[fC[0]][fC[1]] = discountGrid[fC[0]][fC[1]]  + (1-discountGrid[fC[0]][fC[1]])*distToDiscount(dist);
 					}
+
 				}
 			}
 		}
-		return true;
 	}
 	return true;
-
 }
+
 
 bool Environment::updateIGCells(){
 	return true;
@@ -269,28 +229,104 @@ std::vector<std::vector<int>> Environment::getFrontierCells(){
 	//need to only return frontier cells --> get a convolution and evaluate?
 	prevFrontierCells.clear();
 	int failedCount = failedCells.size();
+	int frontierCount = 0;	//gives position of coord in prevFrontierCells
 	for (int i = 0; i < envWidth; i++){
 		for (int j = 0; j < envHeight; j++){
 			if (occupancyGrid.data[coordToIndex(i, j)] == -1 && isFrontier(i,j)){
 				if (failedCount > 0) {
 					if (!inFailed(i,j)){
-						frontierGrid[i][j] = 1;
+						frontierGrid[i][j] = frontierCount;
 						prevFrontierCells.push_back({i,j});
+						frontierCount ++;
+						//ROS_INFO("FronterCount: %d", frontierGrid[i][j]);
 					} else {
 						failedCount -=1;
 					}
 				} else {
-					frontierGrid[i][j] = 1;
+					frontierGrid[i][j] = frontierCount;
 					prevFrontierCells.push_back({i,j});
+					frontierCount++;
+					//ROS_INFO("FronterCount: %d", frontierGrid[i][j]);
 				}
 			}
 		}
 	}
-	visualiseFrontier();
+	visualizeCoords(prevFrontierCells, 0.0f, 1.0f, 0.0f);
 	return prevFrontierCells;
 
 }
 
+/*
+ * Checks for connected frontiers and returns centroid of each region
+ */
+std::vector<std::vector<int>> Environment::processFrontierCells(){
+	ROS_INFO("Processing Frontier...");
+	std::vector<std::vector<int>> centroids;
+	std::map<int,std::vector<int>> fCopy;
+	for (int i = 0; i < prevFrontierCells.size(); i ++){
+		fCopy[i] = prevFrontierCells[i];
+	}
+
+	int** visitedGrid_;
+	visitedGrid_ = new int*[envWidth];
+	for (int i = 0; i < envWidth; i++){
+		visitedGrid_[i] = new int[envHeight];
+		for (int j = 0; j < envHeight; j++){
+			visitedGrid_[i][j] = 0;
+		}
+	}
+	while (!fCopy.empty()){
+		int totalx = 0 , totaly = 0;
+		int clusterSize = 0;
+
+		std::vector<std::vector<int>> toVisitList;
+
+		toVisitList.push_back(fCopy.begin()->second);
+		fCopy.erase(fCopy.begin()->first);
+
+		while (!toVisitList.empty()){
+			std::vector<int> v = toVisitList.back();
+
+			//"Visit" v's neighbors and add to toVisitList if they are frontiers
+			int rad = 20; 	//hyper parameter
+			int lowerx = MAX(1,v[0]-5); int upperx=MIN(envWidth-2, v[0]+5);
+			int lowery = MAX(1,v[1]-5); int uppery=MIN(envHeight-2, v[1]+5);
+			for (int i = lowerx; i < upperx; i++){
+				for (int j = lowery; j < uppery; j++){
+					int nx_ = i; int ny_ = j;
+					if (visitedGrid_[nx_][ny_] == 0){
+						//Connected!
+						if (frontierGrid[nx_][ny_] != -1){
+							totalx += nx_;
+							totaly += ny_;
+							clusterSize += 1;
+							toVisitList.push_back({nx_,ny_});
+							fCopy.erase(frontierGrid[nx_][ny_]);
+						}
+						visitedGrid_[nx_][ny_] = 1;
+					}
+				}
+
+			}
+
+			toVisitList.pop_back();
+
+		}
+		ROS_INFO("CLUSTER SIZE: %d", clusterSize);
+
+		//Process cluster to output centroid; (Cluster is a simple mean) ,, ignore if cluster size too small/ combine different clusters
+		if (clusterSize > 5){
+			centroids.push_back({(int)(totalx/clusterSize), (int)(totaly/clusterSize)});
+		}
+	}
+	for (int i = 0; i < envWidth; i ++){
+		delete[] visitedGrid_[i];
+	}
+	delete[] visitedGrid_;
+
+	visualizeCoords(centroids, 1.0f, 0.0f, 0.0f);
+	return centroids;
+}
 
 bool Environment::isFrontier(int cx_, int cy_){
 	// only perform convolution on non edge cells
@@ -373,17 +409,19 @@ void Environment::updateFailedFrontiers(std::vector<geometry_msgs::PoseStamped> 
 
 void Environment::resetGrids(){
 	for (auto coord : prevFrontierCells){
-		costGrid[coord[0]][coord[1]] = 0;
-		frontierGrid[coord[0]][coord[1]] = 0;
+		frontierGrid[coord[0]][coord[1]] = -1;
 		informationGrid[coord[0]][coord[1]] = 0;
 	}
 
-	for (auto coord : prevDCCells){
+	for (auto coord : fCentroids){
+		costGrid[coord[0]][coord[1]] = 0;
 		discountGrid[coord[0]][coord[1]] = 0;
 	}
 
 	prevFrontierCells.clear();
 	prevDCCells.clear();
+	fCentroids.clear();
+
 }
 
 unsigned char Environment::Environment::costOfCell(int cx_, int cy_, std::vector<int> pos_){
@@ -450,7 +488,7 @@ std::vector<int> Environment::Environment::pointToCoord(float mx_, float my_){
 }
 
 bool Environment::isEnvUpdated(){
-	return !bUpdateRobotPose && !bUpdateTeamGoalPose && (occupancyGrid.data.size()>0);
+	return !bUpdateRobotPose && !bUpdateTeamGoalPose;
 }
 
 bool Environment::inMap(int cx_, int cy_){
@@ -458,7 +496,7 @@ bool Environment::inMap(int cx_, int cy_){
 }
 
 bool Environment::isEdge(int cx_, int cy_){
-	return (cx_ <= 0 || cx_ >= envWidth || cy_ <= 0 || cy_ >= envHeight);
+	return (cx_ <= 0 || cx_ >= envWidth-1 || cy_ <= 0 || cy_ >= envHeight-1);
 }
 
 bool Environment::inFailed(int cx_, int cy_){
@@ -487,7 +525,7 @@ Environment::Frontier& Environment::Frontier::operator = (const Frontier& f1){
 };
 
 
-visualization_msgs::Marker Environment::visualiseFrontier(){
+visualization_msgs::Marker Environment::visualizeCoords(std::vector<std::vector<int>> coordCells, float r, float g, float b){
   //uint32_t shape = visualization_msgs::Marker::CUBE;
 	ROS_INFO("Visualising...");
 
@@ -501,11 +539,11 @@ visualization_msgs::Marker Environment::visualiseFrontier(){
     marker.type = visualization_msgs::Marker::POINTS;
 
     marker.action = visualization_msgs::Marker::ADD;
-    marker.points.resize(prevFrontierCells.size());
+    marker.points.resize(coordCells.size());
     float res = occupancyGrid.info.resolution;
 
-    for (int i = 0; i < prevFrontierCells.size(); i++){
-    	std::vector<float> fPoint = coordToPoint(prevFrontierCells[i][0],prevFrontierCells[i][1]);
+    for (int i = 0; i < coordCells.size(); i++){
+    	std::vector<float> fPoint = coordToPoint(coordCells[i][0],coordCells[i][1]);
     	marker.points[i].x = fPoint[0];
     	marker.points[i].y = fPoint[1];
     }
@@ -522,9 +560,9 @@ visualization_msgs::Marker Environment::visualiseFrontier(){
 
 
     // Set the color -- be sure to set alpha to something non-zero!
-    marker.color.r = 0.0f;
-    marker.color.g = 1.0f;
-    marker.color.b = 0.0f;
+    marker.color.r = r;
+    marker.color.g = g;
+    marker.color.b = b;
     marker.color.a = 1.0;
 
     marker.lifetime = ros::Duration();
@@ -534,4 +572,98 @@ visualization_msgs::Marker Environment::visualiseFrontier(){
     return marker;
 }
 
+/*bool Environment::Environment::updateDiscountCells(){
+	prevDCCells.clear();
+	if (teamGoalPose.size() == 0 && teamPose.size() == 0){
+		ROS_INFO("No info on other robots");
+		return true;
+	} else if (teamGoalPose.size() > 0){
+		// neighbors pose is in meters
+		for (auto rGoal : teamGoalPose){
+			ros::Time poseTime = rGoal.header.stamp;
+			ros::Duration timePassed = ros::Time::now() - poseTime;
+			if (timePassed.toSec() > expirationTime){
+				waitForTeamGoalPose();
+				return false;
+			}
+			std::vector<int> robotCoord = pointToCoord(rGoal.pose.position.x, rGoal.pose.position.y);
+			int xc = robotCoord[0];
+			int yc = robotCoord[1];
+			//consider first quadrant, can translate after
+			for (int x = 0; x <= searchRadius; x++){
+				for (int y = 0; y <= x; y++){
+					if (x*x + y*y <= searchRadius * searchRadius){
+						int dist = x + y; //taking Manhattan distance
+						for (std::vector<int> cell : circleCorners) {
+							int x_ = xc+cell[0]*x, y_ = yc+cell[1]*y;
+							if (inMap(x_,y_) && frontierGrid[x_][y_] != -1){
+								if (discountGrid[x_][y_] == 0){
+									discountGrid[x_][y_] = distToDiscount(dist);
+								} else {
+									//inspired by alpha blending kekek
+									discountGrid[x_][y_] = discountGrid[x_][y_]  + (1-discountGrid[x_][y_])*distToDiscount(dist);
+								}
+								prevDCCells.push_back({x_,y_});
+							}
+							x_ = xc+cell[0]*y, y_ = yc+cell[1]*x;
+							if (inMap(x_,y_) && frontierGrid[x_][y_] != -1){
+								if (discountGrid[x_][y_] == 0){
+									discountGrid[x_][y_] = distToDiscount(dist);
+								} else {
+									discountGrid[x_][y_] = discountGrid[x_][y_]  + (1-discountGrid[x_][y_])*distToDiscount(dist);
+								}
+								prevDCCells.push_back({x_,y_});
+							}
+						}
+					}
+				}
+			}
+		}
+		return true;
+	} else if (teamPose.size() > 0) {
+		// neighbors pose is in meters
+		for (auto robotPose : teamPose){
+			ros::Time poseTime = robotPose.header.stamp;
+			ros::Duration timePassed = ros::Time::now() - poseTime;
+			if (timePassed.toSec() > expirationTime){
+				waitForTeamGoalPose();
+				return false;
+			}
+			std::vector<int> robotCoord = pointToCoord(robotPose.pose.position.x, robotPose.pose.position.y);
+			int xc = robotCoord[0];
+			int yc = robotCoord[1];
+			//consider first quadrant, can translate after
+			for (int x = 0; x <= searchRadius; x++){
+				for (int y = 0; y <= x; y++){
+					if (x*x + y*y <= searchRadius * searchRadius){
+						int dist = x + y; //taking Manhattan distance
+						for (std::vector<int> cell : circleCorners) {
+							int x_ = xc+cell[0]*x, y_ = yc+cell[1]*y;
+							if (inMap(x_,y_) && frontierGrid[x_][y_] != 1){
+								if (discountGrid[x_][y_] == 0){
+									discountGrid[x_][y_] = distToDiscount(dist);
+								} else {
+									//inspired by alpha blending kekek
+									discountGrid[x_][y_] = discountGrid[x_][y_]  + (1-discountGrid[x_][y_])*distToDiscount(dist);
+								}
+								prevDCCells.push_back({x_,y_});
+							}
+							x_ = xc+cell[0]*y, y_ = yc+cell[1]*x;
+							if (inMap(x_,y_) && frontierGrid[x_][y_] != 1){
+								if (discountGrid[x_][y_] == 0){
+									discountGrid[x_][y_] = distToDiscount(dist);
+								} else {
+									discountGrid[x_][y_] = discountGrid[x_][y_]  + (1-discountGrid[x_][y_])*distToDiscount(dist);
+								}
+								prevDCCells.push_back({x_,y_});
+							}
+						}
+					}
+				}
+			}
+		}
+		return true;
+	}
+	return true;
 
+}*/

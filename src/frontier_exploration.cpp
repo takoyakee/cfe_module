@@ -39,7 +39,9 @@ int main(int argc, char **argv)
     while (ros::ok()){
     	robot.explore();
     	actionlib::SimpleClientGoalState rStatus = moveBaseClient.getState();
-    	if (!robot.processingGoal && robot.hasGoal){
+    	ROS_INFO("Status: %s", rStatus.toString().c_str());
+
+		if (!robot.processingGoal && robot.hasGoal){
     		moveBaseClient.sendGoal(robot.moveBaseGoal);
     		goalPub.publish(robot.goalPose);
     	}
@@ -50,13 +52,11 @@ int main(int argc, char **argv)
 
     	} else if (rStatus.state_ == actionlib::SimpleClientGoalState::SUCCEEDED){
     		ROS_INFO("*********** HURRAY I HAVE SUCCEEDED!!!!!!!! *******");
+    		robot.addFailedFrontiers(robot.goalPose);
     		robot.updateExplorationResults(0, 1);
     		robot.updateProcessingGoal(false);
        		robot.hasGoal = false;
-
-       		//Update current position and other jazz -- tentative solution -- maybe create a function called reupdate...
-       		// PROBLEM -- GOT REPEATING LOOP :(
-       		robot.robotEnvironment.bUpdate = true;
+       		robot.robotEnvironment.bUpdateRobotPose = true;
 
     	} else if (rStatus.state_ == actionlib::SimpleClientGoalState::ABORTED){
     		ROS_INFO("Aborted");
@@ -64,6 +64,7 @@ int main(int argc, char **argv)
     		robot.updateProcessingGoal(false);
     		robot.updateExplorationResults(1, 0);
        		robot.hasGoal = false;
+       		robot.robotEnvironment.bUpdateRobotPose = true;
     	}
 
     	ros::spinOnce();

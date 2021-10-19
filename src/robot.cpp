@@ -21,27 +21,22 @@ Robot::Robot(std::string robotName_, std::string robotMapFrame_, std::string glo
 
 void Robot::explore(){
 	ROS_INFO("Robot.explore() called!");
-	if (robotEnvironment.isEnvUpdated()){
+	if (robotEnvironment.occupancyGrid.data.size() > 0) {
+		while (!robotEnvironment.isEnvUpdated()){
+			updateEnvCurrentPose();
+			updateEnvTeamGoal();
+			updateEnvRobotTeamPose();
+			robotEnvironment.bUpdateRobotPose = false;
+			robotEnvironment.bUpdateTeamGoalPose = false;
+		}
 		bool successfulCandidate = getFrontierCandidates();
-		if (!processingGoal && successfulCandidate){
+		if (successfulCandidate){
 			updateGoal(frontierCandidate.pose);
 			updateMBG();
 			hasGoal = true;
 		}
-	} else if (robotEnvironment.bUpdate){
-		updateEnvCurrentPose();
-		updateEnvTeamGoal();
-		updateEnvRobotTeamPose();
-		robotEnvironment.bUpdate = false;
 	}
-	else {
-		updateEnvCurrentPose();
-		updateEnvTeamGoal();
-		updateEnvRobotTeamPose();
-		robotEnvironment.bUpdateRobotPose = false;
-		robotEnvironment.bUpdateTeamGoalPose = false;
 
-	}
 }
 
 bool Robot::getFrontierCandidates(){
@@ -71,7 +66,7 @@ void Robot::teamGoalCallBack(const geometry_msgs::PoseStamped& msg){
 
 void Robot::mapCallBack(const nav_msgs::OccupancyGrid::ConstPtr& msg){
 	//ROS_INFO("CURRENT map size: %d of dimension (%d x %d) ",robotEnvironment.occupancyGrid.data.size(),robotEnvironment.envWidth, robotEnvironment.envHeight);
-	//ROS_INFO("RECEIVED map size: %d of dimension (%d x %d) ",msg->data.size(),msg->info.width, msg->info.height);
+	ROS_INFO("RECEIVED map size: %d of dimension (%d x %d) ",msg->data.size(),msg->info.width, msg->info.height);
 	if (msg->data.size()> 0){
 		robotEnvironment.updateOccupancyGrid(msg);
 	}
@@ -146,6 +141,7 @@ bool Robot::updateGoal(geometry_msgs::PoseStamped goalPose_){
 
 void Robot::updateEnvCurrentPose(){
 	getCurrentPose();
+	ROS_INFO("Updated Curr Pose");
 	robotEnvironment.updateRobotPose(currentPose);
 }
 
@@ -171,14 +167,12 @@ geometry_msgs::PoseStamped Robot::convertToRobotFrame(geometry_msgs::PoseStamped
     geometry_msgs::TransformStamped transformStamped;
     geometry_msgs::PoseStamped rfPose;
     try {
-    	ROS_INFO("RMF: %s, GF: %s", robotMapFrame.c_str(), globalFrame.c_str());
         transformStamped = buffer.lookupTransform(robotMapFrame, globalFrame, ros::Time(0), ros::Duration(3.0));
     } catch (tf2::TransformException &e) {
     	ROS_WARN("Error with transform");
     }
     //transform input pose_ to rfPose
     tf2::doTransform(pose_, rfPose, transformStamped);
-    ROS_INFO("Transformed pose: %f, %f", rfPose.pose.position.x, rfPose.pose.position.y);
     return rfPose;
 }
 
