@@ -11,10 +11,10 @@ Environment::Environment(){ // @suppress("Class members should be properly initi
 	envWidth = 0;
 	envHeight = 0;
 	maxDist = 0;
-	searchRadius = 30; //defined in cells, should be references to actual laser range
+	searchRadius = 50; //defined in cells, should be references to actual laser range
 	discountMult = 5;
 	costMult = 5;
-	dweight = 0.5;
+	dweight = 0.7;
 	cweight = 0.5;
 	frontierThreshold = 4;
 	expirationTime = 10000;
@@ -30,7 +30,8 @@ Environment::Environment(){ // @suppress("Class members should be properly initi
 	costGrid = NULL;
 	frontierGrid = NULL;
 	occupancy2D = NULL;
-	marker_pub = nh_.advertise<visualization_msgs::Marker>("detected_frontiers", 500);
+	frontiers_pub = nh_.advertise<visualization_msgs::Marker>("detected_frontiers", 500);
+	centroid_pub = nh_.advertise<visualization_msgs::Marker>("centroids", 500);
 }
 
 Environment::~Environment(){
@@ -80,21 +81,24 @@ Environment::Frontier Environment::returnFrontierChoice(){
 
 void Environment::Environment::updateOccupancyGrid(const nav_msgs::OccupancyGrid::ConstPtr& occupancyGrid_)
 {
-	//ROS_INFO("Original Occupancy grid size: %d", occupancyGrid.data.size());
 	if (occupancyGrid.data.size() == 0){
+		ROS_INFO("INITIALISING OCCUPANCY GRID...");
 		occupancyGrid = *occupancyGrid_;
 		envWidth = occupancyGrid.info.width;
 		envHeight = occupancyGrid.info.height;
 		maxDist = (int)(sqrt(pow(envWidth,2)+pow(envHeight,2)));
 		initialiseGrids();
 	} else if (occupancyGrid_->data.size() != occupancyGrid.data.size()){
-		ROS_INFO("** Grids resetted! ***");
+		ROS_INFO("**************OCCUPANCY GRID RESET**********");
 		deleteGrids();
 		occupancyGrid = *occupancyGrid_;
 		envWidth = occupancyGrid.info.width;
 		envHeight = occupancyGrid.info.height;
 		maxDist = (int)(sqrt(pow(envWidth,2)+pow(envHeight,2)));
 		initialiseGrids();
+	} else {
+		ROS_INFO("**********REPLACED INFO***********8");
+		occupancyGrid = *occupancyGrid_;
 	}
 }
 
@@ -159,6 +163,7 @@ bool Environment::Environment::updateCostCells(){
 
 bool Environment::Environment::updateDiscountCells(){
 	prevDCCells.clear();
+	ROS_INFO("GOALSIZE: %d", teamGoalPose.size());
 	if (teamGoalPose.size() == 0 && teamPose.size() == 0){
 		ROS_INFO("No info on other robots");
 		return true;
@@ -171,10 +176,12 @@ bool Environment::Environment::updateDiscountCells(){
 				waitForTeamGoalPose();
 				return false;
 			}
+			ROS_INFO("Other goals: (%f,%f)", rGoal.pose.position.x, rGoal.pose.position.y);
 			std::vector<int> pos = pointToCoord(rGoal.pose.position.x, rGoal.pose.position.y);
 			for (auto fC: fCentroids){
 				float dist = (pos[0]-fC[0])*(pos[0]-fC[0]) + (pos[1]-fC[1])*(pos[1]-fC[1]);
 				if( dist<= searchRadius * searchRadius){
+					ROS_INFO("Dont choose same goal");
 					if (discountGrid[fC[0]][fC[1]] == 0){
 						discountGrid[fC[0]][fC[1]] = distToDiscount(dist);
 					} else {
@@ -185,6 +192,7 @@ bool Environment::Environment::updateDiscountCells(){
 			}
 		}
 	} else if (teamPose.size() > 0) {
+
 		// neighbors pose is in meters
 		for (auto rPose : teamPose){
 			ros::Time poseTime = rPose.header.stamp;
@@ -197,6 +205,7 @@ bool Environment::Environment::updateDiscountCells(){
 			for (auto fC: fCentroids){
 				float dist = (pos[0]-fC[0])*(pos[0]-fC[0]) + (pos[1]-fC[1])*(pos[1]-fC[1]);
 				if( dist<= searchRadius * searchRadius){
+					ROS_INFO("Repelling robots");
 					if (discountGrid[fC[0]][fC[1]] == 0){
 						discountGrid[fC[0]][fC[1]] = distToDiscount(dist);
 					} else {
@@ -221,7 +230,8 @@ unsigned char Environment::evaluateUtility(int cx_, int cy_){
 	/*ROS_INFO("(%d,%d), cost: %d, dc: %f, utility: %d", cx_, cy_, costGrid[cx_][cy_], (254*discountGrid[cx_][cy_]),
 			(unsigned char) (MAX(0,(255 - cweight*costGrid[cx_][cy_] - dweight*254*discountGrid[cx_][cy_]))));
 
-*/	return (unsigned char) (MAX(0,(255 - cweight*costGrid[cx_][cy_] - dweight*254*discountGrid[cx_][cy_])));
+*/	ROS_INFO("Discount: %f",dweight*254*discountGrid[cx_][cy_]);
+	return (unsigned char) (MAX(0,(255 - cweight*costGrid[cx_][cy_] - dweight*254*discountGrid[cx_][cy_])));
 
 }
 
@@ -251,13 +261,14 @@ std::vector<std::vector<int>> Environment::getFrontierCells(){
 			}
 		}
 	}
-	visualizeCoords(prevFrontierCells, 0.0f, 1.0f, 0.0f);
+	visualizeCoords(prevFrontierCells, 0.0f, 1.0f, 0.0f, frontiers_pub);
 	return prevFrontierCells;
 
 }
 
 /*
  * Checks for connected frontiers and returns centroid of each region
+ * More accurately: Voronoi Partition
  */
 std::vector<std::vector<int>> Environment::processFrontierCells(){
 	ROS_INFO("Processing Frontier...");
@@ -280,6 +291,7 @@ std::vector<std::vector<int>> Environment::processFrontierCells(){
 		int clusterSize = 0;
 
 		std::vector<std::vector<int>> toVisitList;
+		std::vector<std::vector<int>> cluster;
 
 		toVisitList.push_back(fCopy.begin()->second);
 		fCopy.erase(fCopy.begin()->first);
@@ -288,9 +300,9 @@ std::vector<std::vector<int>> Environment::processFrontierCells(){
 			std::vector<int> v = toVisitList.back();
 
 			//"Visit" v's neighbors and add to toVisitList if they are frontiers
-			int rad = 20; 	//hyper parameter
-			int lowerx = MAX(1,v[0]-5); int upperx=MIN(envWidth-2, v[0]+5);
-			int lowery = MAX(1,v[1]-5); int uppery=MIN(envHeight-2, v[1]+5);
+			int rad = 10; 	//hyper parameter
+			int lowerx = MAX(1,v[0]-rad); int upperx=MIN(envWidth-2, v[0]+rad);
+			int lowery = MAX(1,v[1]-rad); int uppery=MIN(envHeight-2, v[1]+rad);
 			for (int i = lowerx; i < upperx; i++){
 				for (int j = lowery; j < uppery; j++){
 					int nx_ = i; int ny_ = j;
@@ -312,11 +324,14 @@ std::vector<std::vector<int>> Environment::processFrontierCells(){
 			toVisitList.pop_back();
 
 		}
-		ROS_INFO("CLUSTER SIZE: %d", clusterSize);
+
 
 		//Process cluster to output centroid; (Cluster is a simple mean) ,, ignore if cluster size too small/ combine different clusters
 		if (clusterSize > 5){
-			centroids.push_back({(int)(totalx/clusterSize), (int)(totaly/clusterSize)});
+			int centroidx = (int)(totalx/clusterSize);
+			int centroidy = (int)(totaly/clusterSize);
+			centroids.push_back({centroidx,centroidy});
+			ROS_INFO("CLUSTER SIZE: %d with centroid (%d,%d)", clusterSize, centroidx, centroidy);
 		}
 	}
 	for (int i = 0; i < envWidth; i ++){
@@ -324,7 +339,7 @@ std::vector<std::vector<int>> Environment::processFrontierCells(){
 	}
 	delete[] visitedGrid_;
 
-	visualizeCoords(centroids, 1.0f, 0.0f, 0.0f);
+	visualizeCoords(centroids, 1.0f, 0.0f, 0.0f, centroid_pub);
 	return centroids;
 }
 
@@ -383,7 +398,8 @@ void Environment::updateTeamGoalPose(std::map<std::string, geometry_msgs::PoseSt
 	for(auto& pose: teamGoalPose_) {
 		poseVector.push_back(pose.second);
 	}
-	teamGoalPose = std::move(poseVector);
+	teamGoalPose = poseVector;
+	ROS_INFO("TGP SIZE: %d", teamGoalPose.size());
 }
 
 void Environment::waitForTeamGoalPose(){
@@ -525,7 +541,8 @@ Environment::Frontier& Environment::Frontier::operator = (const Frontier& f1){
 };
 
 
-visualization_msgs::Marker Environment::visualizeCoords(std::vector<std::vector<int>> coordCells, float r, float g, float b){
+visualization_msgs::Marker Environment::visualizeCoords(std::vector<std::vector<int>> coordCells,
+		float r, float g, float b, ros::Publisher pub){
   //uint32_t shape = visualization_msgs::Marker::CUBE;
 	ROS_INFO("Visualising...");
 
@@ -567,7 +584,7 @@ visualization_msgs::Marker Environment::visualizeCoords(std::vector<std::vector<
 
     marker.lifetime = ros::Duration();
 
-    marker_pub.publish(marker);
+    pub.publish(marker);
 
     return marker;
 }

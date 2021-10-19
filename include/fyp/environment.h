@@ -62,7 +62,8 @@ class Environment {
 
 	private:
 		ros::NodeHandle nh_;
-		ros::Publisher marker_pub;
+		ros::Publisher frontiers_pub;
+		ros::Publisher centroid_pub;
 
 		//Grids for frontier allocations
 		char ** occupancy2D;
@@ -96,7 +97,8 @@ class Environment {
 		void initialiseGrids();
 		void deleteGrids();
 		void resetGrids();
-		visualization_msgs::Marker visualizeCoords(std::vector<std::vector<int>> cells, float r, float g, float b);
+		visualization_msgs::Marker visualizeCoords(std::vector<std::vector<int>> cells,
+				float r, float g, float b, ros::Publisher pub);
 
 		void waitForRobotPose();
 		void waitForTeamGoalPose();

@@ -12,7 +12,7 @@ Robot::Robot(std::string robotName_, std::string robotMapFrame_, std::string glo
     hasGoal = false;
     processingGoal = false;
     goalReached = false;
-    commRadius = 30;
+    commRadius = 10000;
     failedRun = 0;
     frontiersExplored = 0;
     robotEnvironment.globalFrame = globalFrame;
@@ -51,12 +51,11 @@ bool Robot::getFrontierCandidates(){
 void Robot::teamGoalCallBack(const geometry_msgs::PoseStamped& msg){
 	//only consider if pose published is not own (e.g. robot_1/map)
 	if (!msg.header.frame_id.empty()){
-		std::string poseMapFrame = msg.header.frame_id.substr(1, poseMapFrame.length()-2);
+		std::string poseMapFrame = msg.header.frame_id;
 		std::string robotFrameName =  eraseSubStr(poseMapFrame, "/map") + "/base_link"; // robot_1/base_link -> to review and avoid hardcode
 		if (poseMapFrame.compare(robotMapFrame) != 0){
 			if (!inCommunicationRange(robotFrameName).header.frame_id.empty()){
-				ROS_INFO("Goal from %s is registered", poseMapFrame);
-
+				ROS_INFO("GOAL %s is REGISTERED BY %s", poseMapFrame.c_str(), robotMapFrame.c_str());
 				//e.g. {robot_2/map, PoseStamped}
 				teamGoalPose[poseMapFrame] = msg;
 			}
@@ -141,11 +140,12 @@ bool Robot::updateGoal(geometry_msgs::PoseStamped goalPose_){
 
 void Robot::updateEnvCurrentPose(){
 	getCurrentPose();
-	ROS_INFO("Updated Curr Pose");
+	//ROS_INFO("Updated Curr Pose");
 	robotEnvironment.updateRobotPose(currentPose);
 }
 
 void Robot::updateEnvTeamGoal(){
+	ROS_INFO("UPDATING ENV GOAL");
 	robotEnvironment.updateTeamGoalPose(teamGoalPose);
 }
 

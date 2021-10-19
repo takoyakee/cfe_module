@@ -1,6 +1,7 @@
 <launch>
     <node pkg="fyp" type="exploration_module" name="robot_1_frontier_module" output="screen">
     	<param name="robot_name" value="robot_1"/>
+        <param name="robot_map_frame" value = "robot_1/map"/>
         <param name="global_frame" value ="robot_1/map"/>
         <param name="robot_frame" value="robot_1/base_link"/>
         <param name="map_topic" value="/robot_1/map"/>

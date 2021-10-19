@@ -31,8 +31,8 @@ int main(int argc, char **argv)
 
     //Ros Subscribers and Publishers
     ros::Subscriber mapSub = nh.subscribe(mapTopic_,1, &Robot::mapCallBack, &robot);
-    ros::Subscriber teamGoalSub = nh.subscribe(frontierGoal_ , 10, &Robot::teamGoalCallBack, &robot);
-    ros::Publisher goalPub = nh.advertise<geometry_msgs::PoseStamped>(frontierGoal_,10);
+    ros::Subscriber teamGoalSub = nh.subscribe(frontierGoal_, 5, &Robot::teamGoalCallBack, &robot);
+    ros::Publisher goalPub = nh.advertise<geometry_msgs::PoseStamped>(frontierGoal_,1);
 
     ros::Rate rate(10);
 
@@ -40,8 +40,11 @@ int main(int argc, char **argv)
     	robot.explore();
     	actionlib::SimpleClientGoalState rStatus = moveBaseClient.getState();
     	ROS_INFO("Status: %s", rStatus.toString().c_str());
+		moveBaseClient.sendGoal(robot.moveBaseGoal);
+		goalPub.publish(robot.moveBaseGoal.target_pose);
+   		robot.robotEnvironment.bUpdateRobotPose = true;
 
-		if (!robot.processingGoal && robot.hasGoal){
+/*		if (!robot.processingGoal && robot.hasGoal){
     		moveBaseClient.sendGoal(robot.moveBaseGoal);
     		goalPub.publish(robot.goalPose);
     	}
@@ -65,7 +68,7 @@ int main(int argc, char **argv)
     		robot.updateExplorationResults(1, 0);
        		robot.hasGoal = false;
        		robot.robotEnvironment.bUpdateRobotPose = true;
-    	}
+    	}*/
 
     	ros::spinOnce();
     	rate.sleep();
