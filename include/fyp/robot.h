@@ -9,7 +9,7 @@ class Robot{
     public: 
         //Constructor 
         Robot(std::string robotName_, std::string robotMapFrame_, std::string globalFrame_,
-        		std::string robotFrame_, std::string frontierGoal_);
+        		std::string robotFrame_, std::string mergeMapTopic_, std::string mapTopic_, std::string frontierGoal_);
 
         move_base_msgs::MoveBaseGoal moveBaseGoal;
         geometry_msgs::PoseStamped goalPose;
@@ -21,6 +21,7 @@ class Robot{
         bool goalReached;
         Environment robotEnvironment;
 
+        void mergeMapCallBack(const nav_msgs::OccupancyGrid::ConstPtr& msg);
         void mapCallBack(const nav_msgs::OccupancyGrid::ConstPtr& msg);
         void teamGoalCallBack(const geometry_msgs::PoseStamped& msg);
 
@@ -36,6 +37,8 @@ class Robot{
         std::string globalFrame;
         std::string robotFrame;
         std::string robotMapFrame;
+        std::string mergeMapTopic;
+        std::string mapTopic;
         std::string frontierGoal;
 
         int teamSize;

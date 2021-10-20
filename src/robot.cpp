@@ -1,12 +1,15 @@
 #include <fyp/robot.h>
 
-Robot::Robot(std::string robotName_, std::string robotMapFrame_, std::string globalFrame_, std::string robotFrame_, std::string frontierGoal_)
+Robot::Robot(std::string robotName_, std::string robotMapFrame_, std::string globalFrame_,
+        		std::string robotFrame_, std::string mergeMapTopic_, std::string mapTopic_, std::string frontierGoal_)
 {
     robotName = robotName_;
     robotMapFrame = robotMapFrame_;
     globalFrame = globalFrame_;
     //e.g. robot_1/baselink
     robotFrame = robotFrame_;
+    mergeMapTopic = mergeMapTopic_;
+    mapTopic = mapTopic_;
     frontierGoal = frontierGoal_;
     currentPose = getCurrentPose();
     hasGoal = false;
@@ -16,12 +19,13 @@ Robot::Robot(std::string robotName_, std::string robotMapFrame_, std::string glo
     failedRun = 0;
     frontiersExplored = 0;
     robotEnvironment.globalFrame = globalFrame;
+    robotEnvironment.robotName = robotName;
     teamSize = 2;
 }
 
 void Robot::explore(){
 	ROS_INFO("Robot.explore() called!");
-	if (robotEnvironment.occupancyGrid.data.size() > 0) {
+	if (robotEnvironment.occupancyGrid.data.size() > 0 && robotEnvironment.offx != 0) {
 		while (!robotEnvironment.isEnvUpdated()){
 			updateEnvCurrentPose();
 			updateEnvTeamGoal();
@@ -63,11 +67,17 @@ void Robot::teamGoalCallBack(const geometry_msgs::PoseStamped& msg){
 	}
 }
 
-void Robot::mapCallBack(const nav_msgs::OccupancyGrid::ConstPtr& msg){
-	//ROS_INFO("CURRENT map size: %d of dimension (%d x %d) ",robotEnvironment.occupancyGrid.data.size(),robotEnvironment.envWidth, robotEnvironment.envHeight);
-	ROS_INFO("RECEIVED map size: %d of dimension (%d x %d) ",msg->data.size(),msg->info.width, msg->info.height);
+void Robot::mergeMapCallBack(const nav_msgs::OccupancyGrid::ConstPtr& msg){
+	ROS_INFO("Merge map");
 	if (msg->data.size()> 0){
 		robotEnvironment.updateOccupancyGrid(msg);
+	}
+}
+
+void Robot::mapCallBack(const nav_msgs::OccupancyGrid::ConstPtr& msg){
+	ROS_INFO("Map");
+	if (msg->data.size()> 0 && robotEnvironment.occupancyGrid.data.size()> 0){
+		robotEnvironment.updateMapOffSet(msg);
 	}
 }
 
@@ -82,7 +92,7 @@ geometry_msgs::PoseStamped Robot::Robot::getCurrentPose(){
     try {
         transformStamped = buffer.lookupTransform(globalFrame, robotFrame, ros::Time(0), ros::Duration(3.0));
     } catch (tf2::TransformException &e) {
-    	ROS_WARN("Error with transform");
+    	ROS_WARN("Error with getting Curr Pose");
     }
 
     tf2::doTransform(tempPose, currentPose, transformStamped);

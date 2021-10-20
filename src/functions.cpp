@@ -12,6 +12,10 @@ float norm(geometry_msgs::PoseStamped ps1, geometry_msgs::PoseStamped ps2){
 			pow((ps1.pose.position.y - ps2.pose.position.y),2));
 }
 
+float norm(std::vector<int> v1, std::vector<int> v2){
+	return sqrt(pow((v1[0] -v2[0]),2) + pow((v1[1] -v2[1]),2));
+}
+
 std::string replace(std::string& str,std::string from, std::string to) {
     size_t start_pos = str.find(from);
     if(start_pos == std::string::npos){

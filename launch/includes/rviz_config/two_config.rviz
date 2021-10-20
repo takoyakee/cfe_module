@@ -175,20 +175,36 @@ Visualization Manager:
       Value: true
     - Class: rviz/Marker
       Enabled: true
-      Marker Topic: /detected_frontiers
+      Marker Topic: /robot_1_centroids
       Name: Marker
       Namespaces:
         basic_shapes: true
       Queue Size: 100
       Value: true
     - Class: rviz/Marker
+      Enabled: false
+      Marker Topic: /robot_1_frontier
+      Name: Marker
+      Namespaces:
+        {}
+      Queue Size: 100
+      Value: false
+    - Class: rviz/Marker
       Enabled: true
-      Marker Topic: /centroids
+      Marker Topic: /robot_2_centroids
       Name: Marker
       Namespaces:
         basic_shapes: true
       Queue Size: 100
       Value: true
+    - Class: rviz/Marker
+      Enabled: false
+      Marker Topic: /robot_2_frontier
+      Name: Marker
+      Namespaces:
+        {}
+      Queue Size: 100
+      Value: false
   Enabled: true
   Global Options:
     Background Color: 48; 48; 48
@@ -217,7 +233,7 @@ Visualization Manager:
   Views:
     Current:
       Class: rviz/Orbit
-      Distance: 47.69407653808594
+      Distance: 58.116825103759766
       Enable Stereo Rendering:
         Stereo Eye Separation: 0.05999999865889549
         Stereo Focal Distance: 1

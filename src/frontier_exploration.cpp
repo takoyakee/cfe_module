@@ -13,16 +13,17 @@ int main(int argc, char **argv)
     std::string nodeName = ros::this_node::getName();
 
     //Loading launch file param values (default values e.g. "/robot_1/map")
-    std::string robotName_, robotMapFrame_, globalFrame_, robotFrame_, mapTopic_, frontierGoal_;
+    std::string robotName_, robotMapFrame_, globalFrame_, robotFrame_, mergeMapTopic_ ,mapTopic_, frontierGoal_;
     ros::param::param<std::string>(nodeName+"/robot_name", robotName_, "robot_1");
     ros::param::param<std::string>(nodeName+"/robot_map_frame", robotMapFrame_, "robot_1/map");
     ros::param::param<std::string>(nodeName+"/global_frame", globalFrame_, "robot_1/map"); 
-    ros::param::param<std::string>(nodeName+"/robot_frame", robotFrame_, "robot_1/base_link"); 
+    ros::param::param<std::string>(nodeName+"/robot_frame", robotFrame_, "robot_1/base_link");
+    ros::param::param<std::string>(nodeName+"/merge_map_topic", mergeMapTopic_, "/merge_map/map");
     ros::param::param<std::string>(nodeName+"/map_topic", mapTopic_, "/robot_1/map");
     ros::param::param<std::string>(nodeName+"/frontier_goal", frontierGoal_, "/frontier/goal");
 
     //initialise instance of robot
-    Robot robot(robotName_, robotMapFrame_, globalFrame_, robotFrame_, frontierGoal_);
+    Robot robot(robotName_, robotMapFrame_, globalFrame_, robotFrame_, mergeMapTopic_, mapTopic_, frontierGoal_);
 
     MoveBaseClient moveBaseClient{robotName_+"/move_base",true};
 	while(!moveBaseClient.waitForServer(ros::Duration(5.0))){
@@ -30,6 +31,7 @@ int main(int argc, char **argv)
 	}
 
     //Ros Subscribers and Publishers
+    ros::Subscriber mergeMapSub = nh.subscribe(mergeMapTopic_, 1, &Robot::mergeMapCallBack, &robot);
     ros::Subscriber mapSub = nh.subscribe(mapTopic_,1, &Robot::mapCallBack, &robot);
     ros::Subscriber teamGoalSub = nh.subscribe(frontierGoal_, 5, &Robot::teamGoalCallBack, &robot);
     ros::Publisher goalPub = nh.advertise<geometry_msgs::PoseStamped>(frontierGoal_,1);
@@ -40,10 +42,42 @@ int main(int argc, char **argv)
     	robot.explore();
     	actionlib::SimpleClientGoalState rStatus = moveBaseClient.getState();
     	ROS_INFO("Status: %s", rStatus.toString().c_str());
-		moveBaseClient.sendGoal(robot.moveBaseGoal);
-		goalPub.publish(robot.moveBaseGoal.target_pose);
-   		robot.robotEnvironment.bUpdateRobotPose = true;
 
+    	if (!robot.processingGoal && robot.hasGoal){
+			ROS_INFO("GOAL PUBLSIHED");
+			moveBaseClient.sendGoal(robot.moveBaseGoal);
+			goalPub.publish(robot.goalPose);
+		}
+		if (rStatus.state_ == actionlib::SimpleClientGoalState::ACTIVE){
+			ROS_INFO("Active");
+			robot.updateProcessingGoal(true);
+			robot.hasGoal = false;
+		} else {
+			robot.updateProcessingGoal(false);
+			robot.hasGoal = false;
+		}
+		robot.robotEnvironment.bUpdateRobotPose = true;
+
+
+/*		moveBaseClient.sendGoal(robot.moveBaseGoal);
+		goalPub.publish(robot.goalPose);
+   		robot.robotEnvironment.bUpdateRobotPose = true;*/
+
+    	/*if (!robot.processingGoal && robot.hasGoal){
+    		ROS_INFO("GOAL PUBLSIHED");
+			moveBaseClient.sendGoal(robot.moveBaseGoal);
+			goalPub.publish(robot.goalPose);
+    	}
+    	if (rStatus.state_ == actionlib::SimpleClientGoalState::ACTIVE){
+			ROS_INFO("Active");
+			robot.updateProcessingGoal(true);
+			robot.hasGoal = false;
+    	} else {
+    		robot.updateProcessingGoal(false);
+    		robot.hasGoal = false;
+    	}
+   		robot.robotEnvironment.bUpdateRobotPose = true;
+*/
 /*		if (!robot.processingGoal && robot.hasGoal){
     		moveBaseClient.sendGoal(robot.moveBaseGoal);
     		goalPub.publish(robot.goalPose);

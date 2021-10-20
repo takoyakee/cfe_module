@@ -4,6 +4,7 @@
         <param name="robot_map_frame" value = "robot_2/map"/>
         <param name="global_frame" value ="robot_1/map"/>
         <param name="robot_frame" value="robot_2/base_link"/>
+        <param name="merge_map_topic" value="/map_merge/map"/>
         <param name="map_topic" value="/robot_2/map"/>
         <param name="frontier_goal" value="/frontier/goal"/>
     </node>

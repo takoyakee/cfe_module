@@ -30,8 +30,8 @@ Environment::Environment(){ // @suppress("Class members should be properly initi
 	costGrid = NULL;
 	frontierGrid = NULL;
 	occupancy2D = NULL;
-	frontiers_pub = nh_.advertise<visualization_msgs::Marker>("detected_frontiers", 500);
-	centroid_pub = nh_.advertise<visualization_msgs::Marker>("centroids", 500);
+	offx = 0.0f;
+	offy = 0.0f;
 }
 
 Environment::~Environment(){
@@ -50,7 +50,7 @@ Environment::Frontier Environment::returnFrontierChoice(){
 		return Frontier(0,0,0);
 	}
 
-    auto cmp = [](Frontier left, Frontier right) { return (left.utility) < (right.utility); };
+	auto cmp = [](Frontier left, Frontier right) { return (left.utility) < (right.utility); };
     std::priority_queue<Frontier, std::vector<Frontier>, decltype(cmp)> pq(cmp);
 	for (auto idx : fCentroids){
 		unsigned char utility_ = evaluateUtility(idx[0],idx[1]);
@@ -59,13 +59,27 @@ Environment::Frontier Environment::returnFrontierChoice(){
 	}
 
 	ros::Time timenow = ros::Time::now();
-	Frontier winner = pq.top();
-	//ROS_INFO("Candidate is at (%d, %d) with utility (%d)", bestFrontier.x, bestFrontier.y, bestFrontier.utility);
-	pq.pop();
-	while (!pq.empty()){
-		Frontier f = pq.top();
-		//ROS_INFO("pq: (%d,%d) with utility %d",f.x, f.y, f.utility);
+
+	std::vector<int> currPos = pointToCoord(currentPose.pose.position.x,currentPose.pose.position.y);
+	Frontier winner{0,0,0};
+	bool allocated = false;
+
+	while (!pq.empty() && !allocated){
+		winner = pq.top();
+		if (pq.size() == 1){
+			allocated = true;
+			break;
+		}
+		std::vector<int> winnerCoord = {winner.x,winner.y};
+		for (auto rPose : teamPose){
+			std::vector<int> pos = pointToCoord(rPose.pose.position.x, rPose.pose.position.y);
+			if (norm(currPos,winnerCoord) < norm(pos,winnerCoord)){
+				allocated = true;
+				break;
+			}
+		}
 		pq.pop();
+
 	}
 
 
@@ -83,6 +97,8 @@ void Environment::Environment::updateOccupancyGrid(const nav_msgs::OccupancyGrid
 {
 	if (occupancyGrid.data.size() == 0){
 		ROS_INFO("INITIALISING OCCUPANCY GRID...");
+		frontiers_pub = nh_.advertise<visualization_msgs::Marker>(robotName + "_frontier", 500);
+		centroid_pub = nh_.advertise<visualization_msgs::Marker>( robotName + "_centroids", 500);
 		occupancyGrid = *occupancyGrid_;
 		envWidth = occupancyGrid.info.width;
 		envHeight = occupancyGrid.info.height;
@@ -100,6 +116,14 @@ void Environment::Environment::updateOccupancyGrid(const nav_msgs::OccupancyGrid
 		ROS_INFO("**********REPLACED INFO***********8");
 		occupancyGrid = *occupancyGrid_;
 	}
+}
+
+
+//Due to offset between merge map and global frame
+void Environment::updateMapOffSet(const nav_msgs::OccupancyGrid::ConstPtr& occupancyGrid_){
+	offx = occupancyGrid_->info.origin.position.x - occupancyGrid.info.origin.position.x ;
+	offy = occupancyGrid_->info.origin.position.y - occupancyGrid.info.origin.position.y ;
+	ROS_INFO("Offx: %f, Offy: %f", offx, offy);
 }
 
 void Environment::Environment::initialiseGrids(){
@@ -181,12 +205,14 @@ bool Environment::Environment::updateDiscountCells(){
 			for (auto fC: fCentroids){
 				float dist = (pos[0]-fC[0])*(pos[0]-fC[0]) + (pos[1]-fC[1])*(pos[1]-fC[1]);
 				if( dist<= searchRadius * searchRadius){
+					dist = sqrt(dist);
 					ROS_INFO("Dont choose same goal");
 					if (discountGrid[fC[0]][fC[1]] == 0){
 						discountGrid[fC[0]][fC[1]] = distToDiscount(dist);
 					} else {
 						discountGrid[fC[0]][fC[1]] = discountGrid[fC[0]][fC[1]]  + (1-discountGrid[fC[0]][fC[1]])*distToDiscount(dist);
 					}
+					//ROS_INFO("Dc: %f", discountGrid[fC[0]][fC[1]]);
 
 				}
 			}
@@ -312,6 +338,7 @@ std::vector<std::vector<int>> Environment::processFrontierCells(){
 							totalx += nx_;
 							totaly += ny_;
 							clusterSize += 1;
+							cluster.push_back({nx_,ny_});
 							toVisitList.push_back({nx_,ny_});
 							fCopy.erase(frontierGrid[nx_][ny_]);
 						}
@@ -327,9 +354,19 @@ std::vector<std::vector<int>> Environment::processFrontierCells(){
 
 
 		//Process cluster to output centroid; (Cluster is a simple mean) ,, ignore if cluster size too small/ combine different clusters
-		if (clusterSize > 5){
-			int centroidx = (int)(totalx/clusterSize);
-			int centroidy = (int)(totaly/clusterSize);
+		if (cluster.size() > 5){
+			int centroidx = (int)(totalx/cluster.size());
+			int centroidy = (int)(totaly/cluster.size());
+			//processing centroid:
+			while (occupancyGrid.data[coordToIndex(centroidx, centroidy)] >= 10){
+				ROS_INFO("Unfeasible CENTROID (%d,%d)", centroidx, centroidy);
+				std::vector<int> pt = cluster.back();
+				totalx -= pt[0];
+				totaly -= pt[1];
+				cluster.pop_back();
+				centroidx = (int)(totalx/cluster.size());
+				centroidy = (int)(totaly/cluster.size());
+			}
 			centroids.push_back({centroidx,centroidy});
 			ROS_INFO("CLUSTER SIZE: %d with centroid (%d,%d)", clusterSize, centroidx, centroidy);
 		}
@@ -485,8 +522,8 @@ std::vector<int> Environment::Environment::indexToCoord(int index_){
 
 // resolution 0.1m/cell
 std::vector<float> Environment::coordToPoint(int cx_, int cy_){
-	float originx_ = occupancyGrid.info.origin.position.x;
-	float originy_ = occupancyGrid.info.origin.position.y;
+	float originx_ = occupancyGrid.info.origin.position.x + offx;
+	float originy_ = occupancyGrid.info.origin.position.y + offy;
 	return {originx_+cx_*occupancyGrid.info.resolution, originy_+cy_*occupancyGrid.info.resolution};
 }
 
@@ -497,8 +534,8 @@ std::vector<float> Environment::coordToPoint(int cx_, int cy_){
  */
 std::vector<int> Environment::Environment::pointToCoord(float mx_, float my_){
 	//get index then convert to Coord?
-	float originx_ = occupancyGrid.info.origin.position.x;
-	float originy_ = occupancyGrid.info.origin.position.y;
+	float originx_ = occupancyGrid.info.origin.position.x + offx;
+	float originy_ = occupancyGrid.info.origin.position.y + offy;
 	return {(int)(floor((mx_-originx_)/occupancyGrid.info.resolution)),(int)(floor((my_-originy_)/occupancyGrid.info.resolution))};
 
 }

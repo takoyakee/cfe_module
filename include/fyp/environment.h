@@ -32,7 +32,10 @@ class Environment {
 		Environment();
 		~Environment();
 
+		float offx, offy;
+
 		std::string globalFrame;
+		std::string robotName;
 		int envWidth;
 		int envHeight;
 		bool bUpdateRobotPose;
@@ -50,6 +53,7 @@ class Environment {
 
 		Frontier returnFrontierChoice();
 		bool isEnvUpdated();
+		void updateMapOffSet(const nav_msgs::OccupancyGrid::ConstPtr& occupancyGrid_);
 		void updateOccupancyGrid(const nav_msgs::OccupancyGrid::ConstPtr& occupancyGrid_);
 		void updateRobotPose(geometry_msgs::PoseStamped currentPose_);
 		void updateTeamGoalPose(std::map<std::string, geometry_msgs::PoseStamped> teamGoalPose_);
@@ -82,6 +86,8 @@ class Environment {
 
 
 		int maxDist;
+
+
 
 
 		//Hyper parameters
