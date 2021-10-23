@@ -5,7 +5,6 @@
  *      Author: yanling
  */
 #include <fyp/functions.h>
-#include <queue>
 #include <visualization_msgs/Marker.h>
 #include <visualization_msgs/MarkerArray.h>
 #include <iostream>
@@ -25,6 +24,17 @@ class Environment {
 			unsigned char utility;
 			geometry_msgs::PoseStamped pose;
 			Frontier& operator =(const Frontier& f1);
+
+			bool operator<(const Frontier& rhs) const
+			{
+			        return utility < rhs.utility;
+			 }
+
+			bool empty(){
+				if (pose.header.frame_id.empty()){
+					return true;
+				}return false;
+			}
 			Frontier(int x_,int y_,unsigned char utility_);
 		};
 
@@ -51,8 +61,9 @@ class Environment {
 		std::vector<geometry_msgs::PoseStamped> teamPose;
 		std::vector<std::vector<int>> failedCells;
 
-		Frontier returnFrontierChoice();
+		std::priority_queue<Frontier> returnFrontiers();
 		bool isEnvUpdated();
+		bool isEnvInitialised();
 		void updateMapOffSet(const nav_msgs::OccupancyGrid::ConstPtr& occupancyGrid_);
 		void updateOccupancyGrid(const nav_msgs::OccupancyGrid::ConstPtr& occupancyGrid_);
 		void updateRobotPose(geometry_msgs::PoseStamped currentPose_);
@@ -78,17 +89,17 @@ class Environment {
 
 		// Storing previously changed cells
 		// [key] centroid,
+
 		std::vector<std::vector<int>> fCentroids;
-		std::vector<std::vector<int>> prevFrontierCells;
+		std::vector<std::vector<int>> exploredFrontiers;
+		std::priority_queue<Frontier> frontierPQ;
+		std::vector<std::vector<int>> frontierCells;
 		std::vector<std::vector<int>> prevDCCells;
 		std::vector<std::vector<int>> circleCorners;
 		std::map<int,std::vector<int>> kernel;
 
 
 		int maxDist;
-
-
-
 
 		//Hyper parameters
 		int searchRadius;
@@ -113,21 +124,19 @@ class Environment {
 		bool inMap(int cx_, int cy_);
 		bool isEdge(int cx_, int cy_);
 		bool inFailed(int cx_, int cy_);
-
+		bool isFrontier(int cx_, int cy_);
 
 		//**************IMPORTANT*********************//
 		//Utility evaluation
 		std::vector<std::vector<int>> getFrontierCells();
-		std::vector<int> getCentroid(std::vector<std::vector<int>> cluster_);
-		std::vector<std::vector<int>> processFrontierCells();
+		std::vector<std::vector<int>> processFrontierCells(std::vector<std::vector<int>> frontierCells);
+
 		bool updateCostCells();
 		bool updateDiscountCells();
 		bool discountCells(geometry_msgs::PoseStamped pose);
 		bool updateIGCells();
-		bool isFrontier(int cx_, int cy_);
 
-
-		unsigned char costOfCell(int cx_, int cy_, std::vector<int> pos_);
+		unsigned char costOfCell(std::vector<int> idx, std::vector<int> pos_);
 		double distToDiscount(int dist);
 		double infoOfCell(int cx_, int cy_);
 		int cap(int value_);

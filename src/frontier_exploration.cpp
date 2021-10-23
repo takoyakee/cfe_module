@@ -34,75 +34,20 @@ int main(int argc, char **argv)
     ros::Subscriber mergeMapSub = nh.subscribe(mergeMapTopic_, 1, &Robot::mergeMapCallBack, &robot);
     ros::Subscriber mapSub = nh.subscribe(mapTopic_,1, &Robot::mapCallBack, &robot);
     ros::Subscriber teamGoalSub = nh.subscribe(frontierGoal_, 5, &Robot::teamGoalCallBack, &robot);
-    ros::Publisher goalPub = nh.advertise<geometry_msgs::PoseStamped>(frontierGoal_,1);
+    ros::Publisher goalPub = nh.advertise<geometry_msgs::PoseStamped>(frontierGoal_,2);
 
     ros::Rate rate(10);
 
     while (ros::ok()){
     	robot.explore();
-    	actionlib::SimpleClientGoalState rStatus = moveBaseClient.getState();
-    	ROS_INFO("Status: %s", rStatus.toString().c_str());
+    	robot.status = moveBaseClient.getState();
+    	ROS_INFO("Status: %s", robot.status.toString().c_str());
 
     	if (!robot.processingGoal && robot.hasGoal){
 			ROS_INFO("GOAL PUBLSIHED");
 			moveBaseClient.sendGoal(robot.moveBaseGoal);
-			goalPub.publish(robot.goalPose);
+			goalPub.publish(robot.moveBaseGoal.target_pose);
 		}
-		if (rStatus.state_ == actionlib::SimpleClientGoalState::ACTIVE){
-			ROS_INFO("Active");
-			robot.updateProcessingGoal(true);
-			robot.hasGoal = false;
-		} else {
-			robot.updateProcessingGoal(false);
-			robot.hasGoal = false;
-		}
-		robot.robotEnvironment.bUpdateRobotPose = true;
-
-
-/*		moveBaseClient.sendGoal(robot.moveBaseGoal);
-		goalPub.publish(robot.goalPose);
-   		robot.robotEnvironment.bUpdateRobotPose = true;*/
-
-    	/*if (!robot.processingGoal && robot.hasGoal){
-    		ROS_INFO("GOAL PUBLSIHED");
-			moveBaseClient.sendGoal(robot.moveBaseGoal);
-			goalPub.publish(robot.goalPose);
-    	}
-    	if (rStatus.state_ == actionlib::SimpleClientGoalState::ACTIVE){
-			ROS_INFO("Active");
-			robot.updateProcessingGoal(true);
-			robot.hasGoal = false;
-    	} else {
-    		robot.updateProcessingGoal(false);
-    		robot.hasGoal = false;
-    	}
-   		robot.robotEnvironment.bUpdateRobotPose = true;
-*/
-/*		if (!robot.processingGoal && robot.hasGoal){
-    		moveBaseClient.sendGoal(robot.moveBaseGoal);
-    		goalPub.publish(robot.goalPose);
-    	}
-    	if (rStatus.state_ == actionlib::SimpleClientGoalState::ACTIVE){
-    		ROS_INFO("Active");
-    		robot.updateProcessingGoal(true);
-    		robot.hasGoal = false;
-
-    	} else if (rStatus.state_ == actionlib::SimpleClientGoalState::SUCCEEDED){
-    		ROS_INFO("*********** HURRAY I HAVE SUCCEEDED!!!!!!!! *******");
-    		robot.addFailedFrontiers(robot.goalPose);
-    		robot.updateExplorationResults(0, 1);
-    		robot.updateProcessingGoal(false);
-       		robot.hasGoal = false;
-       		robot.robotEnvironment.bUpdateRobotPose = true;
-
-    	} else if (rStatus.state_ == actionlib::SimpleClientGoalState::ABORTED){
-    		ROS_INFO("Aborted");
-    		robot.addFailedFrontiers(robot.goalPose);
-    		robot.updateProcessingGoal(false);
-    		robot.updateExplorationResults(1, 0);
-       		robot.hasGoal = false;
-       		robot.robotEnvironment.bUpdateRobotPose = true;
-    	}*/
 
     	ros::spinOnce();
     	rate.sleep();

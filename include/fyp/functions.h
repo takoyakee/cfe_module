@@ -10,6 +10,7 @@
 #include <grid_map_ros/grid_map_ros.hpp>
 #include <grid_map_core/GridMap.hpp>
 #include <map>
+#include <queue>
 
 float norm(geometry_msgs::PoseStamped ps1, geometry_msgs::PoseStamped ps2);
 float norm(std::vector<int> v1, std::vector<int> v2);

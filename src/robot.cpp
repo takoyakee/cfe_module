@@ -15,41 +15,108 @@ Robot::Robot(std::string robotName_, std::string robotMapFrame_, std::string glo
     hasGoal = false;
     processingGoal = false;
     goalReached = false;
+    recoveryState = false;
     commRadius = 10000;
     failedRun = 0;
     frontiersExplored = 0;
     robotEnvironment.globalFrame = globalFrame;
     robotEnvironment.robotName = robotName;
     teamSize = 2;
+
 }
 
 void Robot::explore(){
-	ROS_INFO("Robot.explore() called!");
-	if (robotEnvironment.occupancyGrid.data.size() > 0 && robotEnvironment.offx != 0) {
-		while (!robotEnvironment.isEnvUpdated()){
-			updateEnvCurrentPose();
-			updateEnvTeamGoal();
-			updateEnvRobotTeamPose();
-			robotEnvironment.bUpdateRobotPose = false;
-			robotEnvironment.bUpdateTeamGoalPose = false;
+	ROS_INFO("EXPLORING...");
+	if(!robotEnvironment.isEnvInitialised()){
+		ROS_INFO("Waiting for Envt to Initialise");
+		return ;
+	}
+	if (status.state_ == actionlib::SimpleClientGoalState::LOST ||!status.isDone()){
+		processingGoal = status.state_ == actionlib::SimpleClientGoalState::ACTIVE;
+		ROS_INFO("Recovery: %d", recoveryState);
+		ROS_INFO("Processing goal: %d", processingGoal);
+		//recoveryState is a flag that blocks updating
+		if (!recoveryState){
+			robotEnvironment.bUpdate = true;
+			while (!robotEnvironment.isEnvUpdated()){
+				updateEnv();
+			}
+			if (getFrontierCandidates()){
+				ROS_INFO("Candidates obtained");
+				rankFrontiers(frontierCandidates);
+				Environment::Frontier chosen = chooseFrontier();
+				ROS_INFO("GOAL: (%d,%d)", chosen.x, chosen.y);
+				updateGoal(chosen.pose);
+				updateMBG();
+				hasGoal = true;
+			} else {
+				// to code some recovery behaviours (e.g. decrease required clustered size?)
+				ROS_INFO("NO FRONTIERS!");
+				hasGoal = false;
+			}
 		}
-		bool successfulCandidate = getFrontierCandidates();
-		if (successfulCandidate){
-			updateGoal(frontierCandidate.pose);
-			updateMBG();
-			hasGoal = true;
+	} else {
+		if (status.state_ == actionlib::SimpleClientGoalState::SUCCEEDED){
+			processingGoal = false;
+			recoveryState = false;
+		} else {
+			recoveryState = true;
+			processingGoal = false;
+			Environment::Frontier chosen = chooseFrontier();
+			if (chosen.empty()){
+				ROS_INFO("NO FRONTIERS!");
+				hasGoal = false;
+				recoveryState = false;
+				// to code some recovery behaviours
+			} else {
+				ROS_INFO("recovery GOAL: (%d,%d)", chosen.x, chosen.y);
+				updateGoal(chosen.pose);
+				updateMBG();
+				hasGoal = true;
+			}
 		}
 	}
+}
 
+Environment::Frontier Robot::chooseFrontier(){
+	Environment::Frontier f{0,0,0};
+	if (!closeFrontier.empty()){
+		f = closeFrontier.top();
+		closeFrontier.pop();
+		ROS_INFO("CLOSE: (%d,%d)", f.x, f.y);
+	} else if (!rejectedFrontier.empty()){
+		f = rejectedFrontier.top();
+		rejectedFrontier.pop();
+		ROS_INFO("rejected: (%d,%d)", f.x, f.y);
+	}
+	return f;
 }
 
 bool Robot::getFrontierCandidates(){
 	ROS_INFO("Getting Frontier Candidates...");
-	//Feed latest currentPose and TeamPose
-	frontierCandidate = robotEnvironment.returnFrontierChoice();
-	if (frontierCandidate.pose.header.frame_id.empty()){
-		return false;
-	} return true;
+	frontierCandidates = robotEnvironment.returnFrontiers();
+	return !frontierCandidates.empty();
+}
+void Robot::rankFrontiers(std::priority_queue<Environment::Frontier> candidates){
+	while (!candidates.empty()){
+		Environment::Frontier f = candidates.top();
+		bool closest = true;
+		for (auto rPose: teamPose){
+			if (norm(currentPose, f.pose) > norm(rPose.second,f.pose)){
+				closest = false;
+			}
+		}
+		if (closest){
+			closeFrontier.push(f);
+		} else {
+			rejectedFrontier.push(f);
+			//ROS_INFO("%s: FAR (%d,%d) with utility: %d", robotName.c_str(),f.x, f.y, f.utility);
+
+		}
+
+		candidates.pop();
+	}
+
 }
 
 void Robot::teamGoalCallBack(const geometry_msgs::PoseStamped& msg){
@@ -57,25 +124,27 @@ void Robot::teamGoalCallBack(const geometry_msgs::PoseStamped& msg){
 	if (!msg.header.frame_id.empty()){
 		std::string poseMapFrame = msg.header.frame_id;
 		std::string robotFrameName =  eraseSubStr(poseMapFrame, "/map") + "/base_link"; // robot_1/base_link -> to review and avoid hardcode
+		ROS_INFO("%s vs %s", poseMapFrame.c_str(), robotMapFrame.c_str());
 		if (poseMapFrame.compare(robotMapFrame) != 0){
+
 			if (!inCommunicationRange(robotFrameName).header.frame_id.empty()){
 				ROS_INFO("GOAL %s is REGISTERED BY %s", poseMapFrame.c_str(), robotMapFrame.c_str());
 				//e.g. {robot_2/map, PoseStamped}
 				teamGoalPose[poseMapFrame] = msg;
+			} else {
+				ROS_INFO("OUT OF COMM RANGE");
 			}
 		}
 	}
 }
 
 void Robot::mergeMapCallBack(const nav_msgs::OccupancyGrid::ConstPtr& msg){
-	ROS_INFO("Merge map");
 	if (msg->data.size()> 0){
 		robotEnvironment.updateOccupancyGrid(msg);
 	}
 }
 
 void Robot::mapCallBack(const nav_msgs::OccupancyGrid::ConstPtr& msg){
-	ROS_INFO("Map");
 	if (msg->data.size()> 0 && robotEnvironment.occupancyGrid.data.size()> 0){
 		robotEnvironment.updateMapOffSet(msg);
 	}
@@ -136,6 +205,15 @@ void Robot::addFailedFrontiers(geometry_msgs::PoseStamped pose){
 	failedFrontiers.push_back(pose);
 	updateEnvFailed();
 
+}
+
+void Robot::updateEnv(){
+	updateEnvCurrentPose();
+	updateEnvTeamGoal();
+	updateEnvRobotTeamPose();
+	robotEnvironment.bUpdate = false;
+	robotEnvironment.bUpdateRobotPose = false;
+	robotEnvironment.bUpdateTeamGoalPose = false;
 }
 
 void Robot::updateEnvFailed(){
@@ -199,7 +277,6 @@ geometry_msgs::PoseStamped Robot::convertToRobotFrame(geometry_msgs::PoseStamped
 }*/
 
 void Robot::getTeamPoses(){
-	teamPose.clear();
 	for (int i = 1; i < teamSize+1; i++){
 		geometry_msgs::PoseStamped otherPose;
 		std::string otherRobotName = "robot_" + std::to_string(i);
