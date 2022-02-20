@@ -1,0 +1,23 @@
+<launch>
+
+	<arg name="robot_namespace"/>
+	<arg name="plan_config"/>
+	<env name="ROSCONSOLE_FORMAT" value="[${node}]: ${message}"/>
+	<include file="$(find fyp_api)/launch/2d_single.launch">
+		<arg name="robot_namespace" value="robot_1"/>
+		<arg name="plan_config" value="$(find fyp_api)/config/2d_config.yaml"/>
+	</include>
+	
+	<include file="$(find fyp_api)/launch/2d_single.launch">
+		<arg name="robot_namespace" value="robot_2"/>
+		<arg name="plan_config" value="$(find fyp_api)/config/2d_config.yaml"/>
+	</include>
+
+	<include file="$(find fyp_api)/launch/2d_single.launch">
+		<arg name="robot_namespace" value="robot_3"/>
+		<arg name="plan_config" value="$(find fyp_api)/config/2d_config.yaml"/>
+	</include>
+
+
+
+</launch>

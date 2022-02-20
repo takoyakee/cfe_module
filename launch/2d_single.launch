@@ -1,0 +1,16 @@
+<launch>
+    <arg name="robot_namespace"/>
+    <arg name="plan_config"/>
+    <!--       -->
+    
+    <node pkg="fyp_api" ns="$(arg robot_namespace)" type="exploration_module" name="frontier_module" output="screen">
+    	<rosparam command="load" file="$(arg plan_config)" />
+    	<rosparam command="load" file="$(find fyp_api)/config/frontier_costmap_params.yaml" ns="fcostmap"/>
+    	<param name="robot_name" value="$(arg robot_namespace)"/>
+    	<param name="robot_map_frame" value="$(arg robot_namespace)/map"/>
+   		<param name="fcostmap/global_frame" value="robot_1/map"/>
+   		<param name="fcostmap/robot_base_frame" value="$(arg robot_namespace)/base_link"/>
+    </node>    
+    
+
+</launch>

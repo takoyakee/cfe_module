@@ -1,0 +1,51 @@
+plan_type : "2D"
+
+#2D Planning
+shared_goal_topic: "/frontier/goal"
+shared_frontier_topic: "/frontier/centroids"
+costmap_topic: "move_base_node/global_costmap"
+
+#Topics to sub to, assumed to be relative without the slash
+scan_topic : "map"
+
+#Frames
+#universal
+base_name : "base_link"
+global_frame : "robot_1/map"
+
+#specific to robot
+
+# Search hyper parameters
+comm_radius: 900
+team_size: 2
+search_radius: 160
+obs_mult: 5
+c_weight: 0.5
+d_weight: 2
+i_weight : 0.2
+frontier_threshold: 4
+cluster_rad: 5
+cluster_size: 15
+expiration_time: 10000
+
+info_rad : 15
+local_range : 20
+og_resolution: 0.25
+
+resolution_x: 0.3
+resolution_y: 0.3
+resolution_z: 0.3
+expand_size: 2
+
+#PCL Params
+leaf_size: 0.2
+cell_size: 20
+cell_height: 5
+neighbour_num: 2 
+k_radius_threshold: 0.3
+k_neighbour_threshold: 3
+k_frontier_cluster_min_size: 30
+
+#costmap
+
+

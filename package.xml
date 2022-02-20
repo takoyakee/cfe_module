@@ -1,8 +1,8 @@
 <?xml version="1.0"?>
 <package>
-  <name>fyp</name>
+  <name>fyp_api</name>
   <version>1.0.0</version>
-  <description>This package provides launch files for Gazebo simulation needed to test the fyp package</description>
+  <description>This package provides launch files for Gazebo simulation needed to test the fyp_api package</description>
   <license>MIT</license>
   <maintainer email="yanling.yyl@gmail.com">Yep Yan Ling</maintainer>
 
@@ -34,13 +34,19 @@
   <build_depend>rospy</build_depend>
   <build_depend>std_msgs</build_depend>
   <build_depend>geometry_msgs</build_depend>
-
+  <build_depend>pcl_ros</build_depend>
   <build_depend>tf2_ros</build_depend>
   <build_depend>tf2</build_depend>
   <build_depend>tf</build_depend>
   <build_depend>nav_msgs</build_depend> 
   <build_depend>actionlib_msgs</build_depend>
   <build_depend>actionlib</build_depend>
+  <build_depend>message_generation</build_depend>
+  <build_depend>costmap_2d</build_depend>
+  <run_depend>message_generation</run_depend>
+  
+  <run_depend>message_runtime</run_depend>
+  <run_depend>costmap_2d</run_depend>
   <run_depend>roscpp</run_depend>
   <run_depend>rospy</run_depend>
   <run_depend>std_msgs</run_depend>
@@ -50,6 +56,7 @@
   <run_depend>tf</run_depend>
   <run_depend>actionlib_msgs</run_depend>
   <run_depend>actionlib</run_depend>
+  <run_depend>pcl_ros</run_depend>
 
 
 

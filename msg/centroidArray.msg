@@ -1,0 +1,2 @@
+string robotName
+centroid[] centroids

@@ -1,5 +1,5 @@
 cmake_minimum_required(VERSION 2.8.3)
-project(fyp)
+project(fyp_api)
 
 ## Find catkin macros and libraries
 ## if COMPONENTS list like find_package(catkin REQUIRED COMPONENTS xyz)
@@ -12,13 +12,17 @@ find_package(catkin REQUIRED COMPONENTS
   tf2_ros
   tf
   nav_msgs
-  grid_map_ros
-  grid_map_core
-  grid_map_msgs
+  pcl_ros
   actionlib_msgs
-
-  
+  costmap_2d
+  navfn
+  std_msgs
+  geometry_msgs
+  message_generation
 )
+
+
+find_package(PCL REQUIRED)
 
 ## System dependencies are found with CMake's conventions
 # find_package(Boost REQUIRED COMPONENTS system)
@@ -54,11 +58,12 @@ find_package(catkin REQUIRED COMPONENTS
 ##   * add every package in MSG_DEP_SET to generate_messages(DEPENDENCIES ...)
 
 ## Generate messages in the 'msg' folder
-# add_message_files(
-#   FILES
-#   Message1.msg
+add_message_files(
+   FILES
+   centroidArray.msg
+   centroid.msg
 #   Message2.msg
-# )
+)
 
 ## Generate services in the 'srv' folder
 # add_service_files(
@@ -75,10 +80,11 @@ find_package(catkin REQUIRED COMPONENTS
 # )
 
 ## Generate added messages and services with any dependencies listed here
-# generate_messages(
-#   DEPENDENCIES
-#   std_msgs
-# )
+generate_messages(
+  DEPENDENCIES
+  std_msgs
+  geometry_msgs
+)
 
 ################################################
 ## Declare ROS dynamic reconfigure parameters ##
@@ -112,7 +118,7 @@ find_package(catkin REQUIRED COMPONENTS
 catkin_package(
   INCLUDE_DIRS include
   LIBRARIES myLibrary
-#  CATKIN_DEPENDS roscpp rospy std_msgs
+  CATKIN_DEPENDS roscpp rospy std_msgs message_runtime costmap_2d tf2_ros
 #  DEPENDS system_lib
 )
 
@@ -127,6 +133,7 @@ include_directories(
   include
   ${catkin_INCLUDE_DIRS}
   ${EIGEN3_INCLUDE_DIR}
+  ${PCL_INCLUDE_DIRS}
 )
 
 ## Declare a C++ library
@@ -138,7 +145,9 @@ add_library(myLibrary
   src/robot.cpp
   src/functions.cpp
   src/environment.cpp
-  src/frontierplanner.cpp
+  src/GridManager.cpp
+  src/Planner.cpp
+  src/Visualisation.cpp
 )
 
 
@@ -149,8 +158,8 @@ add_library(myLibrary
 # add_dependencies(rrt_exploration_tutorials ${${PROJECT_NAME}_EXPORTED_TARGETS} ${catkin_EXPORTED_TARGETS})
 
 ## Declare a C++ executable
-add_executable(exploration_module src/frontier_exploration.cpp)
-target_link_libraries(exploration_module myLibrary ${catkin_LIBRARIES})
+add_executable(exploration_module src/exploration_module.cpp)
+target_link_libraries(exploration_module myLibrary ${catkin_LIBRARIES} ${PCL_INCLUDE_DIRS})
 
 ## Add cmake target dependencies of the executable
 ## same as for the library above

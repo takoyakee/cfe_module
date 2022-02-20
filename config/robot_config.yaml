@@ -1,0 +1,45 @@
+plan_type : "3D"
+
+robot_name : "robot_1"
+base_name : "sensor_at_scan"
+comm_radius: 900
+team_size: 2
+
+state_topic : "state_estimation"
+scan_topic : "occupancyGrid"
+velodyne_topic : "map"
+waypoint_topic : "way_point"
+waypoint_frame: "robot_1/map"
+global_frame : "robot_1/realmap"
+og_frame: "robot_1/realmap"
+
+
+search_radius: 160
+obs_mult: 5
+c_weight: 0.5
+d_weight: 0.5
+i_weight : 0.2
+frontier_threshold: 4
+cluster_rad: 3
+cluster_size: 10
+expiration_time: 10000;
+
+info_rad : 15
+local_range : 20
+og_resolution: 0.25
+
+leaf_size: 0.2
+
+cell_size: 20
+cell_height: 5
+neighbour_num: 2 
+resolution_x: 0.3
+resolution_y: 0.3
+resolution_z: 0.3
+expand_size: 2
+
+k_radius_threshold: 0.3
+k_neighbour_threshold: 3
+k_frontier_cluster_min_size: 30
+
+
