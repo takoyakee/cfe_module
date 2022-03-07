@@ -4,24 +4,27 @@
 namespace Planner_ns
 {
 
-	SensorManager::SensorManager(ros::NodeHandle& nh_, ros::NodeHandle& nh_private, navfn::NavfnROS* planner_): moveBaseClient("move_base",true){
+	SensorManager::SensorManager(ros::NodeHandle& nh_, ros::NodeHandle& nh_private,
+			navfn::NavfnROS* planner_): moveBaseClient("move_base",true){
 		planner = planner_;
 		Initialise(nh_,nh_private);
 	}
 
 	bool SensorParameters::loadParameters(ros::NodeHandle& nh_private){
-		nh_private.getParam("plan_type", planType);
+		std::string param_ns = "/frontier_common/";
 		nh_private.getParam("robot_name", robotName);
-		nh_private.getParam("shared_goal_topic", sharedGoalTopic);
-		nh_private.getParam("globalmap_topic", globalmapTopic);
-		nh_private.getParam("costmap_topic", costmapTopic);
-		nh_private.getParam("global_frame", globalFrame);
-		nh_private.getParam("waypoint_frame", waypointFrame);
 		nh_private.getParam("state_topic", stateTopic);
-		nh_private.getParam("scan_topic", scanTopic);
-		nh_private.getParam("velodyne_topic",velodyneTopic);
-		nh_private.getParam("waypoint_topic", waypointTopic);
-		nh_private.getParam("mergemap_topic", mergemapTopic);
+
+		nh_private.getParam(param_ns+"plan_type", planType);
+		nh_private.getParam(param_ns+"shared_status_topic",sharedStatusTopic);
+		nh_private.getParam(param_ns+"shared_goal_topic", sharedGoalTopic);
+		nh_private.getParam(param_ns+"globalmap_topic", globalmapTopic);
+		nh_private.getParam(param_ns+"global_frame", globalFrame);
+		nh_private.getParam(param_ns+"waypoint_frame", waypointFrame);
+		nh_private.getParam(param_ns+"scan_topic", scanTopic);
+		nh_private.getParam(param_ns+"velodyne_topic",velodyneTopic);
+		nh_private.getParam(param_ns+"waypoint_topic", waypointTopic);
+		nh_private.getParam(param_ns+"mergemap_topic", mergemapTopic);
 		return true;
 	}
 
@@ -37,6 +40,11 @@ namespace Planner_ns
 		return true;
 	}
 
+	void SensorManager::statusCallBack(const std_msgs::Bool msg){
+		finishedExploration = msg.data;
+
+	}
+
 
 	void SensorManager::Initialise(ros::NodeHandle& nh_, ros::NodeHandle& nh_private){
 		if(!SP.loadParameters(nh_private) || !(pcP.loadParameters(nh_private))){
@@ -44,12 +52,16 @@ namespace Planner_ns
 			return;
 		}
 
+		ROS_INFO("Received: %s", SP.planType.c_str());
+
 		//////2D PLANNING/////
 		if (SP.planType.compare("2D") == 0){
-			goalPub 	=	 nh_.advertise<geometry_msgs::PoseStamped>(SP.sharedGoalTopic,2);
-			goalSub 	= 	nh_.subscribe(SP.sharedGoalTopic, 1, &SensorManager::goalCallBack, this);
 
-		} else if (SP.planType.compare("2D") == 0){
+			//Here is where you sub to goals
+			goalPub 	=	 nh_.advertise<geometry_msgs::PoseStamped>(SP.sharedGoalTopic,1);
+			goalSub 	= 	nh_.subscribe(SP.sharedGoalTopic, 10, &SensorManager::goalCallBack, this);
+			statusSub = nh_.subscribe(SP.sharedStatusTopic,1,&SensorManager::statusCallBack,this);
+		} else if (SP.planType.compare("3D") == 0){
 			velodyneSub 	=	nh_.subscribe(SP.velodyneTopic, 1, &SensorManager::velodyneCallBack, this);
 			stateSub 		= 	nh_.subscribe<nav_msgs::Odometry>(SP.stateTopic, 3, &SensorManager::stateCallBack, this);
 			waypointPub = 	nh_.advertise<geometry_msgs::PointStamped>(SP.waypointTopic,5);
@@ -71,7 +83,8 @@ namespace Planner_ns
 		scanSub 		= 	nh_.subscribe(SP.scanTopic, 1, &SensorManager::scanCallBack, this);
 
 		distanceTravelled = 0.0f;
-		counter = 1;
+		desiredRate = 1;
+		finishedExploration = false;
 
 		robotController = std::make_unique<Robot_ns::Robot>(nh_,nh_private);
 		robotController->setEnvPlanner(planner);
@@ -80,7 +93,7 @@ namespace Planner_ns
 
 	}
 
-	void SensorManager::execute(){
+	bool SensorManager::execute(){
 		//ROS_INFO("Execute called!");
 		if (SP.planType.compare("3D") == 0){
 			ROS_INFO("3D planning");
@@ -95,22 +108,35 @@ namespace Planner_ns
 		else if (SP.planType.compare("2D") == 0){
 			//ROS_INFO("2D planning");
 			robotController->status = moveBaseClient.getState();
+			//print out state if not active:
+			if (moveBaseClient.getState() != actionlib::SimpleClientGoalState::ACTIVE){
+				//ROS_INFO("State: %s",moveBaseClient.getState().toString().c_str());
+			}
 			robotController->updatePoses();
-	    	if (robotController->explore()){
-		    	robotController->addPoseToPath();
+			robotController->addTrajectory();
+			if (robotController->explore()){
 	    	    if (robotController->hasGoal){
-	    	    	//ROS_INFO("*****************SENDING NEW GOAL******************");
-	    			moveBaseClient.sendGoal(robotController->getMBG());
-	    			goalPub.publish((robotController->getMBG()).target_pose);
+	    	    	if (finishedExploration){
+	    	    		moveBaseClient.cancelGoal();
+	    	    	} else {
+		    			moveBaseClient.sendGoal(robotController->getMBG());
+		    			goalPub.publish((robotController->getMBG()).target_pose);
+	    	    	}
+
 	    		}
 	    	}
 		}
 		else {
 			ROS_INFO("Not supported planning!");
-			return;
+			return false;
 		}
+		return finishedExploration;
 
 
+	}
+
+	bool SensorManager::isInitialised(){
+		return robotController->isInitialised();
 	}
 
 	void SensorManager::sendLocalFrontier(){

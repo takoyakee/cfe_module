@@ -1,4 +1,4 @@
-cmake_minimum_required(VERSION 2.8.3)
+cmake_minimum_required(VERSION 3.0.2)
 project(fyp_api)
 
 ## Find catkin macros and libraries
@@ -12,6 +12,7 @@ find_package(catkin REQUIRED COMPONENTS
   tf2_ros
   tf
   nav_msgs
+  carrot_planner
   pcl_ros
   actionlib_msgs
   costmap_2d
@@ -23,6 +24,7 @@ find_package(catkin REQUIRED COMPONENTS
 
 
 find_package(PCL REQUIRED)
+find_package(OpenCV)
 
 ## System dependencies are found with CMake's conventions
 # find_package(Boost REQUIRED COMPONENTS system)
@@ -62,6 +64,7 @@ add_message_files(
    FILES
    centroidArray.msg
    centroid.msg
+   distMetrics.msg
 #   Message2.msg
 )
 
@@ -135,8 +138,7 @@ include_directories(
   ${EIGEN3_INCLUDE_DIR}
   ${PCL_INCLUDE_DIRS}
 )
-
-## Declare a C++ library
+# Declare a C++ library
 # add_library(rrt_exploration_tutorials
 #   src/${PROJECT_NAME}/rrt_exploration_tutorials.cpp
 # )
@@ -151,7 +153,6 @@ add_library(myLibrary
 )
 
 
-
 ## Add cmake target dependencies of the library
 ## as an example, code may need to be generated before libraries
 ## either from message generation or dynamic reconfigure
@@ -160,6 +161,12 @@ add_library(myLibrary
 ## Declare a C++ executable
 add_executable(exploration_module src/exploration_module.cpp)
 target_link_libraries(exploration_module myLibrary ${catkin_LIBRARIES} ${PCL_INCLUDE_DIRS})
+
+add_executable(assigner src/assigner.cpp)
+target_link_libraries(assigner myLibrary ${catkin_LIBRARIES} )
+
+add_executable(evaluator src/performance_evaluation.cpp)
+target_link_libraries(evaluator myLibrary ${catkin_LIBRARIES} )
 
 ## Add cmake target dependencies of the executable
 ## same as for the library above

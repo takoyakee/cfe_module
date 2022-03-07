@@ -1,2 +1,3 @@
 geometry_msgs/Point point
-float32 csize
+float32 ig
+float32 grad

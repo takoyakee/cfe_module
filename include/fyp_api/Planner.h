@@ -14,7 +14,7 @@
 #include <pcl/filters/extract_indices.h>
 #include <pcl/common/centroid.h>
 #include <move_base_msgs/MoveBaseAction.h>
-
+#include <actionlib/client/simple_action_client.h>
 
 namespace Planner_ns{
 
@@ -27,6 +27,7 @@ namespace Planner_ns{
 		std::string velodyneTopic;
 		std::string waypointTopic;
 		std::string mergemapTopic;
+		std::string sharedStatusTopic;
 		bool loadParameters(ros::NodeHandle& nh_private);
 
 	};
@@ -46,13 +47,14 @@ namespace Planner_ns{
 		public:
 			SensorManager(ros::NodeHandle& nh_, ros::NodeHandle& nh_private,
 					navfn::NavfnROS* planner_);
-			void execute();
+			bool execute();
+			bool isInitialised();
 
 			//2D PLANNING
 			navfn::NavfnROS* planner;
 		private:
 		    typedef actionlib::SimpleActionClient<move_base_msgs::MoveBaseAction> MoveBaseClient;
-
+		    bool finishedExploration;
 			 enum CellState : char
 			  {
 			    UNKNOWN = -1,
@@ -67,6 +69,7 @@ namespace Planner_ns{
 			ros::Subscriber stateSub;
 			ros::Subscriber scanSub;
 			ros::Subscriber velodyneSub;
+			ros::Subscriber statusSub;
 
 			ros::Publisher waypointPub;
 			ros::Publisher localOGPub;
@@ -84,7 +87,7 @@ namespace Planner_ns{
 			Eigen::Vector3d currPose;
 			std::vector<int> updatedScanIdx;
 			float distanceTravelled;
-			int counter;
+			int desiredRate, counter;
 
 			std::unique_ptr<Robot_ns::Robot> robotController;
 			std::unique_ptr<GridManager_ns::GridManager> worldGrid;
@@ -95,6 +98,7 @@ namespace Planner_ns{
 			void scanCallBack(const nav_msgs::OccupancyGrid::ConstPtr& occupancyGrid_);
 			void velodyneCallBack(const sensor_msgs::PointCloud2ConstPtr& scanMsg);
 			void mergemapCallBack(const nav_msgs::OccupancyGrid::ConstPtr& occupancyGrid_);
+			void statusCallBack(const std_msgs::Bool msg);
 
 			void sendLocalFrontier();
 			void downsizeCloud(pcl::PointCloud<pcl::PointXYZ>::Ptr& cloud_in, pcl::PointCloud<pcl::PointXYZ>::Ptr& cloud_out);

@@ -5,7 +5,6 @@
  *      Author: yanling
  */
 #include <fyp_api/functions.h>
-#include <fyp_api/Visualisation.h>
 #include <iostream>
 #include <fstream>
 #include <pcl/kdtree/kdtree.h>
@@ -14,9 +13,11 @@
 #include <pcl/filters/extract_indices.h>
 #include <pcl/common/centroid.h>
 #include <navfn/navfn.h>
-
 #ifndef FYP_INCLUDE_FYP_ENVIRONMENT_H_
 #define FYP_INCLUDE_FYP_ENVIRONMENT_H_
+#include <fyp_api/Visualisation.h>
+#include <geometry_msgs/PoseArray.h>
+
 
 namespace Environment_ns{
 	//consider using BST or kdtree
@@ -27,10 +28,19 @@ namespace Environment_ns{
 		Node* parent;
 	};
 
+	struct edge{
+		bool isEdge;
+		float gradient;
+		edge(){
+			isEdge = false;
+			gradient = 0;
+		}
+
+	};
 	struct Frontier {
 		int x;
 		int y;
-		double utility;
+		double utility,grad;
 		double cost, discount, ig, validate, penalty;
 		geometry_msgs::PoseStamped pose;
 		Frontier& operator =(const Frontier& f1);
@@ -46,14 +56,15 @@ namespace Environment_ns{
 		 }
 
 		void evaluate(float cweight,float dweight, float iweight);
+		std::vector<int> key();
 
-		Frontier(int x_,int y_, double utility_);
+		Frontier(int x_,int y_);
 	};
 
 	struct EnvironmentParameters{
 		//To load:
 		std::string globalFrame, robotName, robotMapFrame, sharedFrontierTopic, baseName;
-		float discountMult, costMult, obsMult;
+		float discountMult, costMult, obsMult, oobMult;
 		float cweight, dweight, iweight;
 		float frontierThreshold;
 		int searchRadius, clusterRad, clusterSize;
@@ -93,11 +104,14 @@ namespace Environment_ns{
 			std::unique_ptr<Vis_ns::Vis> vis;
 			bool globalOGreceived, poseReceived, computePotential, plannerInitialised;
 			fyp_api::centroidArray cpub;
-			std::map<std::string, fyp_api::centroidArray> teamCentroids;
+			fyp_api::centroidArray assigned;
 			geometry_msgs::Point scanOrigin, offSet, currPt; //can consider using a point if thats the type
 			navfn::NavfnROS* planner;
-			std::vector<std::vector<int>> pathCoord;
-			std::vector<geometry_msgs::PoseStamped> navPS;
+			nav_msgs::Path navPath, bPath;
+			std::vector<std::vector<int>> badCoord, inaccessible;
+			std::vector<float> color, pose_weight;
+			geometry_msgs::TransformStamped global2Own, own2Global;
+
 
 			void setPlanner(navfn::NavfnROS* planner_);
 			void updateGlobalOrigin(const nav_msgs::OccupancyGrid::ConstPtr& globalOG_);
@@ -105,21 +119,28 @@ namespace Environment_ns{
 			void centroidCB(fyp_api::centroidArray c);
 			void publishCentroid();
 			void compileCentroid();
+			bool findFeasibleCentroid(Frontier& centroid);
+			void findInMap(Frontier& frontier);
+			void findNearestUnknown(int& cx_, int& cy_, float angle);
+			void insert(std::map<std::vector<int>, Frontier>& dict, Frontier elem);
+
 			geometry_msgs::Point coordToPt(int cx_, int cy_);
+			std::vector<int> ptToCoord(geometry_msgs::Point pt);
 			bool isKnown(int cx_, int cy_);
+			//so that conversion such as coordtopoint can be used
+			void setParamsForAssigner(std::string RobotName, std::string robotMapFrame, std::string GlobalFrame);
 
 
 
 		private:
 			EnvironmentParameters EP;
 
-			ros::Publisher frontiers_pub, centroid_pub, brensenham_pub,centroidmarker_pub, path_pub;
-			ros::Publisher clusteredpub;
-			ros::Publisher map_pub;
-			ros::Subscriber centroid_sub, costmap_sub;
+			ros::Publisher centroid_pub, brensenham_pub, path_pub, clusteredpub;
+			ros::Subscriber centroid_sub;
 
 			//Grids for frontier allocations
 			int** frontierGrid;
+			std::map<std::vector<int>,float>  grads;
 			pcl::PointCloud<pcl::PointXYZI>::Ptr poseCloud, frontierCloud;
 			pcl::KdTreeFLANN<pcl::PointXYZI>::Ptr posKDTree, frontierKDTree;
 
@@ -134,8 +155,8 @@ namespace Environment_ns{
 			std::vector<geometry_msgs::PoseStamped> teamGoalPose;
 			std::vector<geometry_msgs::PoseStamped> teamPose;
 
-			std::vector<std::vector<int>> frontierCells, centroidVector, tempCells;
-			std::map<std::vector<int>, float> centroidMap;
+			std::vector<std::vector<int>> frontierCells, visCentroid, tempCells;
+			std::map<std::vector<int>, Frontier> ownCentroid, finalCentroid;
 			std::priority_queue<Frontier> frontierPQ;
 
 
@@ -144,12 +165,13 @@ namespace Environment_ns{
 			//**************IMPORTANT*********************//
 			//Utility evaluation
 			std::vector<std::vector<int>> getFrontierCells();
-			std::map<std::vector<int>,float> clusterFrontier(std::vector<std::vector<int>> frontierCells);
+			void clusterFrontier(std::vector<std::vector<int>> frontierCells);
 
 			std::priority_queue<Frontier> evaluateFrontiers();
 
 
 			std::vector<int> interpolateCoord(std::vector<int> targetCell);
+
 			double cellCost(int cx_, int cy_);
 			double cellDiscount(int cx_, int cy_);
 			std::map<std::vector<int>, double> cellValidate(int cx_, int cy_);
@@ -159,7 +181,7 @@ namespace Environment_ns{
 			void resetGrids();
 
 			//------ Helper functions ------
-			double edgeGrad(int cx_, int cy_);
+			edge edgeGrad(int cx_, int cy_);
 
 			int coordToIndex(int cx_, int cy_);
 			std::vector<float> coordToPoint(int cx_, int cy_);
@@ -168,7 +190,7 @@ namespace Environment_ns{
 			std::vector<int> indexToCoord(int index_);
 
 			bool inMap(int cx_, int cy_);
-			bool isFrontier(int cx_, int cy_);
+			edge isFrontier(int cx_, int cy_);
 			bool isEdge(int cx_, int cy_);
 			bool isFree(int cx_, int cy_);
 

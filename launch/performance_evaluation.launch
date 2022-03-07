@@ -1,0 +1,37 @@
+<launch>
+
+<arg name="fn" value="test"/>
+<arg name="env_used" default="blocks"/>
+<arg name="type" default="near"/>
+<env name="ROSCONSOLE_FORMAT" value="${message}"/>
+
+<!--  Node subscribes to individual occupancy grids and distance packaged in distmetrics msg -->
+<!--  If distmetrics Node subscribes to individual occupancy grids and distance packaged in distmetrics msg -->
+
+<node pkg="fyp_api" name="evaluator" type="evaluator" output="screen">
+	<param name="iter_freq" value="2" type="double"/>
+	<param name="team_size" value="3" type="int"/>
+	<param name="global_frame" value="robot_1/map"/>
+	<param name="shared_status_topic" value="/frontier/finished"/>
+	<!-- Example: Absolute path of odom topic: namespace+robotnumber+/+odom topic 
+		Example: Absolute path of odom topic: /robot_X/odom  -->
+	<!--  This is for ros subscribers!! -->
+	<param name="namespace" value="/robot_"/>
+	<param name="og_frame" value="map"/>
+	<param name="occupancy_grid_topic" value="map"/>
+	<param name="distance_topic" value="dist"/>
+	<param name="odom_topic" value="odom"/>
+	<param name="odom_frame" value="odom"/>
+	<param name="measure_by_odom" value="true"/>
+
+	<rosparam command="load" file="$(find fyp_api)/config/env/$(arg env_used)_stats.yaml"/>
+	<param name="env_used" value="$(arg env_used)"/>
+	
+	<!--  outputs -->
+	<param name="file_name" value="$(find fyp_api)/data/$(arg env_used)_$(arg type)_MERGE.txt"/>
+	<param name="merged_map_topic" value="merged_map"/>
+	<param name="trajectory_topic" value="traj"/>
+	
+</node>
+
+</launch>

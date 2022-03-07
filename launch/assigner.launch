@@ -1,0 +1,15 @@
+<launch>
+	<env name="ROSCONSOLE_FORMAT" value="[${node}]: ${message}"/>
+
+	<group ns="frontier_common">
+		<param name="shared_frontier_topic" value="/frontier/centroids"/>
+		<param name="team_size" value="3" type="int"/>
+		<param name="global_frame" value="robot_1/map"/>
+		<param name="cluster_rad_m" value="1" type="double"/>
+	</group>		
+	
+	<node name="assigner" pkg="fyp_api" type="assigner" output="screen">
+
+   	</node>    
+    
+</launch>

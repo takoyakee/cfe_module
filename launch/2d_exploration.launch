@@ -1,23 +1,34 @@
 <launch>
-
+	<arg name="env_used" default="blocks"/>
 	<arg name="robot_namespace"/>
-	<arg name="plan_config"/>
 	<env name="ROSCONSOLE_FORMAT" value="[${node}]: ${message}"/>
+	
+	<group ns="frontier_common">
+		<rosparam command="load" file="$(find fyp_api)/config/2d_frontier_exploration.yaml"/>
+		<rosparam command="load" file="$(find fyp_api)/config/env/$(arg env_used)_stats.yaml"/>
+		<param name="file_path" value="$(find fyp_api)/data/"/>
+		
+	</group>
+	
 	<include file="$(find fyp_api)/launch/2d_single.launch">
 		<arg name="robot_namespace" value="robot_1"/>
-		<arg name="plan_config" value="$(find fyp_api)/config/2d_config.yaml"/>
 	</include>
 	
 	<include file="$(find fyp_api)/launch/2d_single.launch">
 		<arg name="robot_namespace" value="robot_2"/>
-		<arg name="plan_config" value="$(find fyp_api)/config/2d_config.yaml"/>
 	</include>
 
 	<include file="$(find fyp_api)/launch/2d_single.launch">
 		<arg name="robot_namespace" value="robot_3"/>
-		<arg name="plan_config" value="$(find fyp_api)/config/2d_config.yaml"/>
 	</include>
-
-
+	
+	
+	
+	<!--  Performance evaluator launched separately to have a clearer output -->
+	<!--  <include file="$(find fyp_api)/launch/performance_evaluation.launch"/>  -->
+	<node name="assigner" pkg="fyp_api" type="assigner" output="screen"/>
+	<!--
+	
+	 -->	
 
 </launch>

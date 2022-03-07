@@ -1,0 +1,2 @@
+string robotName
+float32 dist

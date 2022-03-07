@@ -1,14 +1,19 @@
 #include <fyp_api/robot.h>
 
+
 namespace Robot_ns{
 	bool RobotParameters::loadParameters(ros::NodeHandle& nh_private){
-		nh_private.getParam("global_frame", globalFrame);
-		nh_private.getParam("waypoint_frame", waypointFrame);
 		nh_private.getParam("robot_name", robotName);
-		nh_private.getParam("base_name", baseName); //baseName = vehicle
-		nh_private.getParam("comm_radius", commRad);
-		nh_private.getParam("team_size", teamSize);
 		nh_private.getParam("robot_map_frame", robotMapFrame);
+
+		std::string param_ns = "/frontier_common/";
+		nh_private.getParam(param_ns+"global_frame", globalFrame);
+		nh_private.getParam(param_ns+"waypoint_frame", waypointFrame);
+		nh_private.getParam(param_ns+"base_name", baseName); //baseName = vehicle
+		nh_private.getParam(param_ns+"comm_radius", commRad);
+		nh_private.getParam(param_ns+"team_size", teamSize);
+		nh_private.getParam(param_ns+"file_path",filePath);
+		nh_private.getParam(param_ns+"goal_horizon",goalHorizon);
 		return true;
 
 	}
@@ -31,45 +36,88 @@ namespace Robot_ns{
 		goalReached = false;
 		recoveryState = false;
 		searchEnded = false;
+		rate = RP.goalHorizon; //previously 4
+		counter = 0;
+		distTravelledSince = 1000;
+		distcounter = 4;
+		distrate = 5;
+		//file.open(RP.filePath+RP.robotName+".txt");
+		//file << "Time" << "\t"  << "rbt x" << "\t" << "rbt y" << "t" << "dist" << std::endl;
+/*
+		posefile.open(RP.filePath+RP.robotName+"_poses.txt");
+		file << "Time" << "\t" << "rbt x" << "\t" << "rbt y" << "\t" << "x" << "\t" << "y" << "\t"
+			<< "cost" << "\t" << "discount" << "\t" << "ig" << "\t" << "utility" << std::endl;
+		posefile << "Time" << "\t" << "first x" << "\t" << "first y"  << "second x " << "\t" << "second y "  << "\t"
+				 << "first goal x" << "\t" << "first goal y"  << "second goal x " << "\t" << "second goal y "  << "\t"
+				 << "x" << "\t" << "y" << "\t" << "discount" << std::endl;
+*/
+
 
 		trajPub = nh_.advertise<nav_msgs::Path>("traj",1);
+		posePub = nh_.advertise<geometry_msgs::PoseStamped>("pose",1);
+		distPub = nh_.advertise<fyp_api::distMetrics>("dist",1);
+		odomSub = nh_.subscribe("/"+RP.robotName+"/odom", 1, &Robot::odomCallBack,this);
 		trajectory.header.frame_id = RP.globalFrame;
 	}
 
 	bool Robot::explore(){
 		if (!isInitialised()){
+			ROS_INFO("Waiting to be initialised");
 			return false;
 		}
-		getLatestFrontier();
+		counter ++;
+		distcounter ++;
+		if (distcounter == distrate){
+			if (distTravelledSince > 0.1){
+				getLatestFrontier();
+			} else {
+				recoveryState = true;
+				ROS_INFO("RECOVERY");
+			}
+
+			//ROS_INFO("Dist since: %.3f", distTravelledSince);
+			distcounter = 0;
+			distTravelledSince = 0;
+		} else {
+			getLatestFrontier();
+		}
+
 		setNewGoal();
+		//writeFile(file,frontierCandidate);
 		return hasGoal;
 	}
 
 	bool Robot::getLatestFrontier(){
+		//ROS_INFO("Getting latest frontier");
 		//2d planning:
-
-
 		if (getEnvFrontier()){
 			rankEnvFrontier(frontierCandidates);
 			return true;
 		}
-		ROS_INFO("NO MORE FRONTIERS!");
+		ROS_INFO("NO FRONTIERS!");
 		return false;
 	}
 
 	void Robot::setNewGoal(){
-		Environment_ns::Frontier chosen = chooseFrontier();
-		if (chosen.empty()){
-			ROS_INFO("NO FRONTIERS!");
-			hasGoal = false;
+		Environment_ns::Frontier chosen = frontierCandidate;
+		//consider distcounter
+		if (!hasGoal || counter >= rate || recoveryState){
 			recoveryState = false;
-		} else {
-			ROS_INFO("%s GOAL: (%d,%d)", RP.robotName.c_str(), chosen.x, chosen.y);
+			chosen = chooseFrontier();
+			hasGoal = !chosen.empty();
+		}
+		if (hasGoal){
 			updateGoal(chosen.pose);
 			updateMBG();
-			hasGoal = true;
-			frontierCandidate = chosen;
 		}
+		frontierCandidate = chosen;
+		if (counter >= rate){
+			counter = 0;
+
+			ROS_INFO("(%.1f,%.1f) with C:%.2f D: %.2f I: %.2f",chosen.pose.pose.position.x,chosen.pose.pose.position.y,
+		chosen.cost,chosen.discount,chosen.ig);
+		}
+
 	}
 
 	bool Robot::getEnvFrontier(){
@@ -86,16 +134,13 @@ namespace Robot_ns{
 			rejectedFrontier.pop();
 		}
 
+		bool writetofile = true;
 		while (!candidates.empty()){
 			Environment_ns::Frontier f = candidates.top();
-			bool closest = true;
-/*			for (auto rPose: teamPose){
-				if (norm(currentPose, f.pose) > norm(rPose.second,f.pose)){
-					closest = false;
-				}
-			}*/
+			//writePoseFile(posefile, f);
 
-			//ROS_INFO("robot %s's (%d,%d) with utility: %f, dc: %f",RP.robotName.c_str(),f.x, f.y, f.utility, f.discount);
+			bool closest = true;
+
 			if (closest){
 				closeFrontier.push(f);
 			} else {
@@ -104,10 +149,11 @@ namespace Robot_ns{
 			}
 			candidates.pop();
 		}
+		//file << std::endl;
 	}
 
 	Environment_ns::Frontier Robot::chooseFrontier(){
-		Environment_ns::Frontier f{0,0,0};
+		Environment_ns::Frontier f{0,0};
 		if (!closeFrontier.empty()){
 			f = closeFrontier.top();
 			closeFrontier.pop();
@@ -152,6 +198,7 @@ namespace Robot_ns{
 	void Robot::updateRobotPose(geometry_msgs::PoseStamped poseStamped){
 		geometry_msgs::PoseStamped tempPose = transformToGF(poseStamped);
 		currentPose = tempPose;
+
 	}
 
 	void Robot::updateEnvGrid(const nav_msgs::OccupancyGrid::ConstPtr& occupancyGrid_){
@@ -172,7 +219,6 @@ namespace Robot_ns{
 			pose.header.frame_id = RP.waypointFrame;
 			pose.header.stamp = ros::Time::now();
 			globalPose = transformToGF(pose);
-			//ROS_INFO(" pt: %f,%f,%f -> %f,%f,%f", pt.x, pt.y, pt.z,globalPose.pose.position.x,globalPose.pose.position.y,globalPose.pose.position.z);
 			localFrontier.push_back(Eigen::Vector3d(globalPose.pose.position.x,globalPose.pose.position.y,globalPose.pose.position.z));
 		}
 		robotEnvironment->updateLocalFrontierCloud(localFrontier);
@@ -189,7 +235,6 @@ namespace Robot_ns{
 			geometry_msgs::PoseStamped otherPose;
 			std::string otherRobotName = "robot_" + std::to_string(i);
 			if (otherRobotName.compare(RP.robotName) == 0){
-				//ROS_INFO("should be here!");
 				continue;
 			}
 			//ROS_INFO("robotname: %s", otherRobotName.c_str());
@@ -197,7 +242,6 @@ namespace Robot_ns{
 			otherPose = inCommunicationRange(targetFrame);
 			// e.g. {robot_2: PoseStamped}
 			teamPose[otherRobotName] = otherPose;
-			//ROS_INFO("other pose frame: %s", otherPose.header.frame_id.c_str());
 		}
 	}
 
@@ -262,7 +306,15 @@ namespace Robot_ns{
 
 //////////////////////////////////////////////////////////////////////////////////////
 	bool Robot::isInitialised(){
-		return envInitialised && poseInitialised;
+		int goalNumber = atoi(&RP.robotName.back())-1;
+		//goalReceived = true;
+
+		if (!goalReceived){
+			if((int)(teamGoalPose.size()) >= goalNumber){
+				goalReceived = true;
+			}
+		}
+		return envInitialised && poseInitialised && goalReceived;
 
 	}
 	void Robot::updatePoses(){
@@ -286,7 +338,10 @@ namespace Robot_ns{
 
 	    tf2::doTransform(tempPose, currentPose, transformStamped);
 	    currentPose.header.stamp = ros::Time::now();
+	    currentPose.header.frame_id = RP.globalFrame;
+	    //ROS_INFO("POSITION: %.3f,%.3f", currentPose.pose.position.x,currentPose.pose.position.y);
 	    poseInitialised = true;
+
 	    return currentPose;
 
 	}
@@ -298,30 +353,38 @@ namespace Robot_ns{
 
 	void Robot::updateMBG(){
 		geometry_msgs::PoseStamped rfPose = transformToTF(goalPose, RP.robotMapFrame);
+		//to include orientation
+		rfPose.pose.orientation.w = 1;
+		rfPose.pose.orientation.x = 0;
+		rfPose.pose.orientation.y = 0;
+		rfPose.pose.orientation.z = 0;
+
 		moveBaseGoal.target_pose = rfPose;
 	}
 
 	void Robot::teamGoalCallBack(const geometry_msgs::PoseStamped& msg){
-		//only consider if pose published is not own (e.g. robot_1/map)
 		if (!msg.header.frame_id.empty()){
 			std::string poseMapFrame = msg.header.frame_id;
 			std::string robotFrameName =  eraseSubStr(poseMapFrame, "/map") + "/" + RP.baseName; // robot_1/base_link -> to review and avoid hardcode
 			//ROS_INFO("received robotFrameName: %s", robotFrameName.c_str());
 			if (poseMapFrame.compare(RP.robotMapFrame) != 0){
-
+				geometry_msgs::PoseStamped inGF;
 				if (!inCommunicationRange(robotFrameName).header.frame_id.empty()){
-					teamGoalPose[poseMapFrame] = msg;
-					//ROS_INFO("goal (%f,%f) received", msg.pose.position.x, msg.pose.position.y);
+					inGF = transformToGF(msg);
+					teamGoalPose[poseMapFrame] = inGF;
 				} else {
 					//ROS_INFO("OUT OF COMM RANGE");
 				}
 			}
 		}
+
 	}
 
-	void Robot::addPoseToPath(){
+	void Robot::addTrajectory(){
 		getCurrentPose();
 		geometry_msgs::PoseStamped temp = currentPose;
+		float distTravelled  = 0;
+		if (!trajectory.poses.empty()) distTravelled = norm(trajectory.poses[trajectory.poses.size()-1], temp);
 		temp.pose.orientation.w = 0;
 		temp.pose.orientation.x = 0;
 		temp.pose.orientation.y = 0;
@@ -330,12 +393,51 @@ namespace Robot_ns{
 		trajectory.poses.push_back(temp);
 		if (!trajectory.poses.empty()){
 			trajPub.publish(trajectory);
+			RP.dist += distTravelled;
+			fyp_api::distMetrics dm;
+			dm.robotName = RP.robotName;
+			dm.dist = RP.dist;
+			distPub.publish(dm);
+		}
+
+		if (distcounter != distrate){
+			distTravelledSince += distTravelled;
 		}
 	}
+
+	//2D EXPLORATON
 
 	void Robot::setEnvPlanner(navfn::NavfnROS* planner){
 		robotEnvironment->setPlanner(planner);
 	}
+
+	void Robot::odomCallBack(const nav_msgs::Odometry::ConstPtr& msg){
+		geometry_msgs::PoseStamped temp;
+		temp.pose = msg->pose.pose;
+		temp.header = msg->header;
+
+		posePub.publish(temp);
+
+	}
+
+	void Robot::writeFile(std::ofstream& file_, Environment_ns::Frontier f){
+		file_ << ros::Time::now().toSec() << "\t" << currentPose.pose.position.x << "\t" << currentPose.pose.position.y << "\t" << f.pose.pose.position.x << "\t" << f.pose.pose.position.y << "\t"
+											<< f.cost << "\t" << f.discount << "\t" << f.ig << "\t" << f.utility << std::endl;
+
+	}
+
+	void Robot::writePoseFile(std::ofstream& file_, Environment_ns::Frontier f){
+		file_ << ros::Time::now().toSec() << "\t"
+				<< teamPose.begin()->second.pose.position.x << "\t" << teamPose.begin()->second.pose.position.y << "\t"
+				<< teamPose.end()->second.pose.position.x << "\t" << teamPose.end()->second.pose.position.y << "\t"
+				<< teamGoalPose.begin()->second.pose.position.x << "\t" << teamGoalPose.begin()->second.pose.position.y << "\t"
+				<< teamGoalPose.end()->second.pose.position.x << "\t" << teamGoalPose.end()->second.pose.position.y << "\t"
+				<<f.x << "\t" << f.y << "\t" << f.discount << std::endl;
+
+
+	}
+
+
 
 }
 

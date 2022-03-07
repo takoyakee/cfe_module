@@ -1,0 +1,34 @@
+plan_type : "2D"
+
+#2D Planning
+shared_goal_topic: "/frontier/goal"
+shared_frontier_topic: "/frontier/centroids"
+shared_status_topic: "/frontier/finished"
+map_merged_topic: "/merged_map"
+
+#Topics to sub to, assumed to be relative without the slash
+scan_topic : "/merged_map"
+
+#Frames
+base_name : "base_link"
+global_frame : "robot_1/map"
+
+# Search hyper parameters
+goal_horizon: 4 #how many iterations of keeping the same goal
+comm_radius: 900 #in pixels
+team_size: 3
+search_radius: 7.5 #in m
+obs_mult: 7 #previously 5
+oob_mult: 2
+c_weight: 3 #previously 3
+d_weight: 1.5 #previously 2
+i_weight : 0.4
+frontier_threshold: 4
+cluster_rad: 5
+cluster_rad_m: 3
+cluster_size: 5
+
+#evaluation rate
+iter_freq: 1 #Hz
+
+

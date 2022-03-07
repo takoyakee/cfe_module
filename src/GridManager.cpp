@@ -9,15 +9,16 @@
 
 namespace GridManager_ns{
 	bool GridParameters::loadParameters(ros::NodeHandle& nh_private){
-		nh_private.getParam("leaf_size", leafSize);
-		nh_private.getParam("cell_size", cellSize);
-		nh_private.getParam("cell_height", cellHeight);
-		nh_private.getParam("neighbour_num", neighbourNum);
-		nh_private.getParam("resolution_x", resolutionX);
-		nh_private.getParam("resolution_y", resolutionY);
-		nh_private.getParam("resolution_z", resolutionZ);
-		nh_private.getParam("expand_size", expandSize);
-		nh_private.getParam("waypoint_frame", globalFrame);
+		std::string param_ns = "/frontier_common/";
+		nh_private.getParam(param_ns+"leaf_size", leafSize);
+		nh_private.getParam(param_ns+"cell_size", cellSize);
+		nh_private.getParam(param_ns+"cell_height", cellHeight);
+		nh_private.getParam(param_ns+"neighbour_num", neighbourNum);
+		nh_private.getParam(param_ns+"resolution_x", resolutionX);
+		nh_private.getParam(param_ns+"resolution_y", resolutionY);
+		nh_private.getParam(param_ns+"resolution_z", resolutionZ);
+		nh_private.getParam(param_ns+"expand_size", expandSize);
+		nh_private.getParam(param_ns+"waypoint_frame", globalFrame);
 
 		range = Eigen::Vector3d(cellSize * neighbourNum,cellSize * neighbourNum, cellHeight*neighbourNum);
 		//rolloverRange = Eigen::Vector3d(cellSize,cellSize, cellHeight);

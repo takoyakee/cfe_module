@@ -6,18 +6,13 @@
  */
 #include <fyp_api/environment.h>
 #define UPPERTHRESHOLD 8
+
 namespace Environment_ns {
 
-	std::vector<std::vector<int>> circleCorners = {{1,1},{1,-1},{-1,1},{-1,-1}};
-	std::map<int,std::vector<int>> kernel = {{1,{-1,1}}, {2,{0,1}}, {3,{1,1}},
-											{4,{-1,0}}, 		   {6,{1,0}},
-											{7,{-1,-1}}, {8,{0,-1}}, {9,{1,-1}} };
-
-	Frontier::Frontier(int x_,int y_, double utility_){
+	Frontier::Frontier(int x_,int y_){
 		x = x_;
-		y = y_;
-		utility = utility_;
-		cost = 0.0f, discount = 0.0f, ig = 0.0f, validate = 0.0f, penalty = 0.0f;
+		y = y_; grad = 0.0f;
+		cost = 0.0f, discount = 0.0f, ig = 0.0f, validate = 0.0f, penalty = 0.0f,utility = 0.0f;
 	}
 
 	Frontier& Frontier::operator = (const Frontier& f1){
@@ -29,6 +24,7 @@ namespace Environment_ns {
 		ig = f1.ig;
 		pose = f1.pose;
 		validate = f1.validate;
+		grad = f1.grad;
 		return *this;
 	};
 
@@ -39,9 +35,22 @@ namespace Environment_ns {
 	}
 
 	void Frontier::evaluate(float c,float d, float i){
-		utility = (i*ig)-(c*cost)-(d*discount) + d*validate;
+		//previous: weighted sum
+		utility = -(c*cost)+(i*ig)-(d*discount);
+
 	}
 
+	std::vector<int> Frontier::key(){
+		return {x,y};
+	}
+
+
+
+	std::vector<std::vector<int>> circleCorners = {{1,1},{1,-1},{-1,1},{-1,-1}};
+	std::map<int,std::vector<int>> kernel = {{1,{-1,1}}, {2,{0,1}}, {3,{1,1}},
+											{4,{-1,0}}, 		   {6,{1,0}},
+											{7,{-1,-1}}, {8,{0,-1}}, {9,{1,-1}} };
+	std::map<std::string,std::vector<float>> colorMap = {{"robot_1",{0,1.0,0}},{"robot_2",{0.1,0,1}},{"robot_3",{1,0.6,0}}};
 
 	Environment::Environment(ros::NodeHandle nh_, ros::NodeHandle nh_private):
 			planner(NULL),
@@ -73,10 +82,15 @@ namespace Environment_ns {
 			globalOGreceived = true;
 		}
 
+		if (!EP.robotMapFrame.empty() && !EP.globalFrame.empty()){
+			computeoffSet();
+			cpub.robotName = EP.robotName;
+			bPath.header.frame_id=EP.globalFrame;
+			navPath.header.frame_id = EP.globalFrame;
+			color = colorMap[EP.robotName];
+			vis = std::unique_ptr<Vis_ns::Vis>(new Vis_ns::Vis(EP.globalFrame, nh_, color));
 
-		computeoffSet();
-		cpub.robotName = EP.robotName;
-
+		}
 
 		poseCloud = std::make_unique<pcl::PointCloud<pcl::PointXYZI>>();
 		frontierCloud = std::make_unique<pcl::PointCloud<pcl::PointXYZI>>();
@@ -84,44 +98,43 @@ namespace Environment_ns {
 		frontierKDTree = std::make_unique<pcl::KdTreeFLANN<pcl::PointXYZI>>();
 
 		occupancyGrid = std::unique_ptr<nav_msgs::OccupancyGrid>(new nav_msgs::OccupancyGrid);
-		vis = std::unique_ptr<Vis_ns::Vis>(new Vis_ns::Vis(EP.globalFrame));
 
-/*		if (!EP.costmap_topic.empty()){
-			ROS_INFO("before costmap");
-			costMap = new costmap_2d::Costmap2DROS(std::string("fcostmap"), TF_buffer);
-			ROS_INFO("after costmap");
-			//planner = new navfn::NavfnROS("explore_planner", costMap);
-		}*/
-
-		frontiers_pub = nh_.advertise<visualization_msgs::Marker>("frontier", 50);
-		centroid_pub = nh_.advertise<fyp_api::centroidArray>(EP.sharedFrontierTopic, 1);
-		centroid_sub = nh_.subscribe<fyp_api::centroidArray>(EP.sharedFrontierTopic, 10, &Environment::centroidCB, this);
+/*		frontiers_pub = nh_.advertise<visualization_msgs::Marker>("frontier", 50);
 		brensenham_pub = nh_.advertise<visualization_msgs::Marker>("bresenham", 50);
 		path_pub = nh_.advertise<visualization_msgs::Marker>("navfn_path", 50);
-		centroidmarker_pub = nh_.advertise<visualization_msgs::Marker>("centroid",50);
+		centroidmarker_pub = nh_.advertise<visualization_msgs::Marker>("centroid",50);*/
+		path_pub = nh_.advertise<nav_msgs::Path>("navfn_path", 50);
+		brensenham_pub = nh_.advertise<nav_msgs::Path>("bresenham", 50);
+		centroid_pub = nh_.advertise<fyp_api::centroidArray>(EP.sharedFrontierTopic, 1);
+		centroid_sub = nh_.subscribe<fyp_api::centroidArray>(EP.sharedFrontierTopic, 10, &Environment::centroidCB, this);
 
+		ROS_INFO("FINISHED INITIALISATION");
 	}
 
 	bool EnvironmentParameters::loadParameters(ros::NodeHandle nh_private){
 		////// 2D //////
-		nh_private.getParam("plan_type", planType);
-		nh_private.getParam("costmap_topic",costmap_topic);
-		nh_private.getParam("robot_map_frame", robotMapFrame);
-		nh_private.getParam("global_frame", globalFrame);
 		nh_private.getParam("robot_name", robotName);
-		nh_private.getParam("shared_frontier_topic",sharedFrontierTopic);
-		nh_private.getParam("base_name", baseName);
-		nh_private.getParam("search_radius", searchRadius); //to square
-		nh_private.getParam("obs_mult", obsMult);
-		nh_private.getParam("c_weight", cweight);
-		nh_private.getParam("d_weight", dweight);
-		nh_private.getParam("i_weight", iweight);
-		nh_private.getParam("frontier_threshold", frontierThreshold);
-		nh_private.getParam("cluster_rad", clusterRad);
-		nh_private.getParam("cluster_size", clusterSize);
-		nh_private.getParam("expiration_time", expirationTime);
-		nh_private.getParam("local_range", localRange); //localrange is the xy size of occupancyGrid
-		nh_private.getParam("og_resolution", resolution);
+		nh_private.getParam("robot_map_frame", robotMapFrame);
+
+		std::string param_ns = "/frontier_common/";
+		nh_private.getParam(param_ns+"plan_type", planType);
+		nh_private.getParam(param_ns+"global_frame", globalFrame);
+		nh_private.getParam(param_ns+"shared_frontier_topic",sharedFrontierTopic);
+		nh_private.getParam(param_ns+"base_name", baseName);
+		nh_private.getParam(param_ns+"search_radius", searchRadius); //to square
+		nh_private.getParam(param_ns+"obs_mult", obsMult);
+		nh_private.getParam(param_ns+"oob_mult", oobMult);
+		nh_private.getParam(param_ns+"c_weight", cweight);
+		nh_private.getParam(param_ns+"d_weight", dweight);
+		nh_private.getParam(param_ns+"i_weight", iweight);
+		nh_private.getParam(param_ns+"frontier_threshold", frontierThreshold);
+		nh_private.getParam(param_ns+"cluster_rad", clusterRad);
+		nh_private.getParam(param_ns+"cluster_size", clusterSize);
+		nh_private.getParam(param_ns+"expiration_time", expirationTime);
+		nh_private.getParam(param_ns+"local_range", localRange); //localrange is the xy size of occupancyGrid
+		nh_private.getParam(param_ns+"og_resolution", resolution);
+
+		ROS_INFO("SHARED TOPIC: %s", sharedFrontierTopic.c_str());
 
 		localCellRange = localRange/resolution;
 		return true;
@@ -137,11 +150,15 @@ namespace Environment_ns {
 		publishCentroid();
 		compileCentroid();
 		std::priority_queue<Frontier> pq = evaluateFrontiers();
-		std::vector<std::vector<int>> tmp;
-		tmp.push_back(pointToCoord(0, -0.8));
-		centroidmarker_pub.publish(vis->visMarker(centroidVector, 0, 0, 1));
-		brensenham_pub.publish(vis->visMarker(pathCoord,0.5f,0.5f,0,0.1));
-		path_pub.publish(vis->visMarker(navPS, 1.0f, 1.0f, 1.0f,0.1));
+
+
+		vis->visShape(visCentroid, color[0],color[1],color[2],0.3);
+		//vis->visShape(navPS, 0.5f, 1.0f, 0,0.1);
+		vis->visPub();
+		bPath.header.stamp = ros::Time::now();
+		navPath.header.stamp = ros::Time::now();
+		brensenham_pub.publish(bPath);
+		path_pub.publish(navPath);
 		resetGrids();
 		frontierPQ = pq;
 		return pq;
@@ -157,7 +174,7 @@ namespace Environment_ns {
 			EP.envWidth = occupancyGrid_->info.width;
 			EP.envHeight = occupancyGrid_->info.height;
 			EP.resolution = occupancyGrid_->info.resolution;
-			EP.maxDist = sqrt(pow(EP.envWidth,2)+ pow(EP.envHeight,2));
+			EP.maxDist = sqrt(pow(EP.envWidth,2)+pow(EP.envHeight,2));
 
 			initialiseGrids();
 		} else {
@@ -167,15 +184,17 @@ namespace Environment_ns {
 			EP.envWidth = occupancyGrid_->info.width;
 			EP.envHeight = occupancyGrid_->info.height;
 			EP.resolution = occupancyGrid_->info.resolution;
-			EP.maxDist = sqrt(pow(EP.envWidth,2)+ pow(EP.envHeight,2));
-			ROS_INFO("%d + %d = %d",EP.envWidth, EP.envHeight,EP.maxDist);
+			EP.maxDist = sqrt(pow(EP.envWidth,2)+pow(EP.envHeight,2));
 			initialiseGrids();
 		}
-		scanOrigin = occupancyGrid->info.origin.position;
-		geometry_msgs::Point visPt;
-		visPt.x = scanOrigin.x + offSet.x;
-		visPt.y = scanOrigin.y + offSet.y;
-		vis->updateParam(EP.resolution, visPt);
+
+		if (vis != NULL){
+			scanOrigin = occupancyGrid->info.origin.position;
+			geometry_msgs::Point visPt;
+			visPt.x = scanOrigin.x;
+			visPt.y = scanOrigin.y;
+			vis->updateParam(EP.resolution, visPt, own2Global);
+		}
 	}
 
 
@@ -184,9 +203,12 @@ namespace Environment_ns {
 		int frontierCount = 0;	//gives position of coord in prevFrontierCells
 		for (int i = 0; i < EP.envWidth; i++){
 			for (int j = 0; j < EP.envHeight; j++){
+
 				if (occupancyGrid->data[coordToIndex(i, j)] == -1 ){
-					if (isFrontier(i,j)){
+					edge cell = isFrontier(i,j);
+					if (cell.isEdge){
 						frontierGrid[i][j] = frontierCount;
+						grads[{i,j}] = cell.gradient;
 						prevFrontierCells.push_back({i,j});
 						frontierCount ++;
 					}
@@ -196,7 +218,7 @@ namespace Environment_ns {
 			}
 		}
 
-		frontiers_pub.publish(vis->visMarker(prevFrontierCells, 0.0f, 1.0f, 0.0f, 0.2));
+		//vis->visShape(prevFrontierCells, color[0], color[1], color[2],0.2);
 		return prevFrontierCells;
 
 	}
@@ -205,7 +227,7 @@ namespace Environment_ns {
 	 * Checks for connected frontiers and returns centroid of each region
 	 * More accurately: Voronoi Partition
 	 */
-	std::map<std::vector<int>,float> Environment::clusterFrontier(std::vector<std::vector<int>> frontierCells){
+	void Environment::clusterFrontier(std::vector<std::vector<int>> frontierCells){
 
 		std::map<int,std::vector<int>> frontierMap;
 		for (int i = 0; i < frontierCells.size(); i ++){
@@ -222,8 +244,15 @@ namespace Environment_ns {
 		}
 
 		int maxClusterSize = 0;
+		std::map<std::vector<int>, fyp_api::centroid> clusterSizeMap;
+
+		geometry_msgs::PoseArray poses;
+		tf2::Quaternion q;
+
+
 		while (!frontierMap.empty()){
 			int totalx = 0 , totaly = 0;
+			float totalgrad = 0;
 
 			std::vector<std::vector<int>> toVisitList;
 			std::vector<std::vector<int>> cluster;
@@ -235,8 +264,8 @@ namespace Environment_ns {
 				std::vector<int> v = toVisitList.back();
 
 				//"Visit" v's neighbors and add to toVisitList if they are frontiers 	//hyper parameter
-				int lowerx = MAX(1,v[0]-EP.clusterRad); int upperx=MIN(EP.envWidth-2, v[0]+EP.clusterRad);
-				int lowery = MAX(1,v[1]-EP.clusterRad); int uppery=MIN(EP.envHeight-2, v[1]+EP.clusterRad);
+				int lowerx = std::max(1,v[0]-EP.clusterRad); int upperx=std::min(EP.envWidth-2, v[0]+EP.clusterRad);
+				int lowery = std::max(1,v[1]-EP.clusterRad); int uppery=std::min(EP.envHeight-2, v[1]+EP.clusterRad);
 				for (int i = lowerx; i < upperx; i++){
 					for (int j = lowery; j < uppery; j++){
 						int nx_ = i; int ny_ = j;
@@ -245,6 +274,7 @@ namespace Environment_ns {
 							if (frontierGrid[nx_][ny_] != -1){
 								totalx += nx_;
 								totaly += ny_;
+								totalgrad += grads[{nx_,ny_}];
 								cluster.push_back({nx_,ny_});
 								toVisitList.push_back({nx_,ny_});
 								frontierMap.erase(frontierGrid[nx_][ny_]);
@@ -257,64 +287,81 @@ namespace Environment_ns {
 				toVisitList.pop_back();
 			}
 
-			//ROS_INFO("Cluster size: %d", cluster.size());
 			if (cluster.size() > EP.clusterSize){
-				int centroidx = (int)(totalx/cluster.size());
-				int centroidy = (int)(totaly/cluster.size());
-				centroidMap[{centroidx,centroidy}] = cluster.size();
-				//ROS_INFO("Added (%d,%d)", centroidx, centroidy);
+				int x = (int)(totalx/cluster.size());
+				int y = (int)(totaly/cluster.size());
+				findNearestUnknown(x, y, totalgrad/cluster.size());
 
+				fyp_api::centroid c;
+				c.ig = cluster.size();
+				c.grad = totalgrad/cluster.size();
+				clusterSizeMap[{x,y}] = c;
+				std::vector<float> pt = coordToPoint(x,y);
+
+
+/*				geometry_msgs::Pose p;
+				p.position.x = pt[0];
+				p.position.y = pt[1];
+				q.setEuler(0, 0, totalgrad/cluster.size());
+				p.orientation.w = q.getW();
+				p.orientation.x = q.getX();
+				p.orientation.y = q.getY();
+				p.orientation.z = q.getZ();
+
+				poses.poses.push_back(p);*/
+
+				//ROS_INFO("AVG GRADIENTS: %.3f", totalgrad/cluster.size());
 			}
 
-			maxClusterSize = MAX(maxClusterSize, cluster.size());
+			maxClusterSize = std::fmax(maxClusterSize, cluster.size());
 		}
 
-		EP.numCluster = centroidMap.size();
+		EP.numCluster = ownCentroid.size();
 
-		for (auto it: centroidMap){
-			centroidMap[it.first] = it.second/maxClusterSize;
+		for (auto it: clusterSizeMap){
+			Frontier centroid{it.first[0],it.first[1]};
+			centroid.ig = (float)(it.second.ig)/maxClusterSize;
+			centroid.grad = it.second.grad;
+			insert(ownCentroid,centroid);
 		}
+		std::vector<std::vector<int>> visOwnCentroid;
+		for (auto k : ownCentroid){
+			visOwnCentroid.push_back(k.first);
+		}
+		vis->visShape(visOwnCentroid, color[0], color[1], color[2],0.2);
 
 		for (int i = 0; i < EP.envWidth; i ++){
 			delete[] visitedGrid_[i];
 		}
 		delete[] visitedGrid_;
 
-		return centroidMap;
+		//vis->visPose(poses);
 	}
 
 	std::priority_queue<Frontier> Environment::evaluateFrontiers(){
 		std::vector<std::vector<int>>tmpcoord;
 		std::priority_queue<Frontier> pq;
-		for (auto fCell : centroidMap){
-			centroidVector.push_back(fCell.first);
-			Frontier frontier(0,0,0);
-			frontier.x = fCell.first[0];
-			frontier.y = fCell.first[1];
-			frontier.ig = fCell.second;
-			std::map<std::vector<int>,double> tmap = cellValidate(fCell.first[0],  fCell.first[1]);
-			frontier.cost = cellCost(fCell.first[0], fCell.first[1]);
-			frontier.discount = cellDiscount(fCell.first[0], fCell.first[1]);
+		for (auto key : finalCentroid){
+			//for visualisation
+			visCentroid.push_back(key.first);
+			Frontier centroid = key.second;
+
+			std::map<std::vector<int>,double> tmap = cellValidate(key.first[0],  key.first[1]);
+			centroid.discount = cellDiscount(key.first[0],  key.first[1]);
 			if (localFrontier.size() > 0){
-				frontier.validate = tmap.begin()->second ;
+				centroid.validate = tmap.begin()->second ;
 				std::vector<int> newCoord;
-				if (frontier.validate == 0){
-					newCoord = interpolateCoord(fCell.first);
+				if (centroid.validate == 0){
+					newCoord = interpolateCoord(key.first);
 				} else {
 					newCoord = {tmap.begin()->first[0],tmap.begin()->first[1]};
 				}
-				frontier.pose = coordToPS(newCoord[0], newCoord[1]);
+				centroid.pose = coordToPS(newCoord[0], newCoord[1]);
 				tmpcoord.push_back({newCoord[0],newCoord[1]});
 			}
-			else {
-				frontier.pose = coordToPS(fCell.first[0],fCell.first[1]);
-				tmpcoord.push_back({fCell.first[0],fCell.first[1]});
-			}
 
-
-			frontier.evaluate(EP.cweight, EP.dweight, EP.iweight);
-			//ROS_INFO("(%d,%d) has penalty of : %f", frontier.x, frontier.y, cellPenalty(frontier.x, frontier.y));
-			pq.push(frontier);
+			centroid.evaluate(EP.cweight, EP.dweight, EP.iweight);
+			pq.push(centroid);
 		}
 
 
@@ -344,6 +391,8 @@ namespace Environment_ns {
 			poseVector.push_back(pose.second);
 		}
 		teamGoalPose = poseVector;
+		//vis->visShape(teamGoalPose, color[0],color[1],color[2]);
+		vis->visPub();
 		//ROS_INFO("TGP SIZE: %d", teamGoalPose.size());
 	}
 
@@ -351,10 +400,14 @@ namespace Environment_ns {
 
 	void Environment::updateRobotTeamPose(std::map<std::string, geometry_msgs::PoseStamped> teamPose_){
 		std::vector<geometry_msgs::PoseStamped> poseVector;
+		teamPose.clear();
+		pose_weight.clear();
 		for(auto& pose: teamPose_) {
-			poseVector.push_back(pose.second);
+			teamPose.push_back(pose.second);
+			double poseweight = std::fmin(1.0,(norm(pose.second,currentPose))/(EP.searchRadius/4));
+			pose_weight.push_back(poseweight);
+			//ROS_INFO("pose weight: %.3f",poseweight);
 		}
-		teamPose = std::move(poseVector);
 	}
 
 	void Environment::updateLocalFrontierCloud(std::vector<Eigen::Vector3d> localFrontier_){
@@ -427,26 +480,7 @@ namespace Environment_ns {
 
 
 	double Environment::cellCost(int cx_, int cy_){
-		//Brensenham approach
-		std::vector<std::vector<int>> visitedCell;
-		std::vector<int> goalCoord = {cx_,cy_};
-		bresenham2D(currCoord,goalCoord,visitedCell);
-		double cost = 0.0f;
-		int obsCell = 0;
-		for (auto coord: visitedCell){
-			if (inMap(coord[0],coord[1])){
-				int idx = coordToIndex(coord[0], coord[1]);
-				if (occupancyGrid->data[idx] != 0){
-					obsCell++;
-				}
-			} else {
-				obsCell++;
-			}
-		}
-		float totalCell = visitedCell.size() + EP.obsMult*obsCell;
-
-		//navfnROS
-		int navObs = 0; float navTotal = 0.0f;
+		int navObs = 0, navOob = 0; float totalCost = 0.0f;
 		geometry_msgs::PoseStamped endPS = coordToPS(cx_,cy_);
 		std::vector<geometry_msgs::PoseStamped> plan;
 		if (planner->makePlan(currentPose, endPS, plan)){
@@ -455,57 +489,63 @@ namespace Environment_ns {
 				if (inMap(coord[0],coord[1])){
 					int idx = coordToIndex(coord[0], coord[1]);
 					if (occupancyGrid->data[idx] != 0){
-						//ROS_INFO("hiii");
 						navObs++;
 					}
 				} else {
-					ROS_INFO("OUT OF BOUNDS");
-					navObs++;
+					navOob++;
 				}
 			}
-			navTotal = plan.size() + EP.obsMult*navObs;
-			ROS_INFO("avg cost: %.3f (vs %.3f)",MIN(1, (navTotal/EP.maxDist)), MIN(1, (totalCell/EP.maxDist)));
+			totalCost = plan.size() + EP.obsMult*navObs;
 		} else {
-			ROS_INFO("failed: %.3f (bresenham)", MIN(1, (totalCell/EP.maxDist)));
-		}
-		if (navTotal > totalCell){
+
+			std::vector<std::vector<int>> visitedCell;
+			std::vector<int> goalCoord = {cx_,cy_};
+			bresenham2D(currCoord,goalCoord,visitedCell);
 			for (auto coord: visitedCell){
-				pathCoord.push_back(coord);
+				if (inMap(coord[0],coord[1])){
+					int idx = coordToIndex(coord[0], coord[1]);
+					if (occupancyGrid->data[idx] != 0){
+						navObs++;
+						if (occupancyGrid->data[idx] > 0){
+							navObs ++;
+						}
+					}
+				} else {
+					navOob++;
+				}
 			}
-			for (auto pose : plan){
-				navPS.push_back(pose);
-			}
+			//ROS_INFO("OOB/TOTAL: (%d/%d)", navOob, visitedCell.size());
+			totalCost = visitedCell.size() + EP.obsMult*navObs + EP.oobMult*navOob;
 		}
-		return MIN(1, (totalCell/EP.maxDist));
+		return std::fmin(1.0, (totalCost/EP.maxDist));
 	}
 
 	double Environment::cellDiscount (int cx_, int cy_){
 		//Discount frontiers that are in other robots range
-		std::vector<int> cellCoord{cx_,cy_};
 		std::vector<float> cellPt = coordToPoint(cx_, cy_);
 		float goalDC = 0.0f, poseDC = 0.0f;
-		std::vector<geometry_msgs::PoseStamped> close;
 		for (auto rGoal : teamGoalPose){
-			std::vector<int> goalCoord = pointToCoord(rGoal.pose.position.x, rGoal.pose.position.y);
-			float dist = norm(cellCoord,goalCoord);
+			float dist = norm(cellPt,rGoal);
 			if (dist < EP.searchRadius){
-				goalDC = goalDC + (1-goalDC)*(1-dist/EP.searchRadius);
-				close.push_back(rGoal);
-				/*ROS_INFO("%s's (%.3f,%.3f) is close to (%.3f,%.3f), goalDC: %.3f",
-						EP.robotName.c_str(), cellPt[0], cellPt[1], rGoal.pose.position.x, rGoal.pose.position.y, goalDC);
-*/
+				float oldgoalDC = goalDC;
+				goalDC = goalDC + (1-goalDC)*(1-(dist/EP.searchRadius));
 			}
 		}
-		for (auto rPose : teamPose){
-			std::vector<int> poseCoord = pointToCoord(rPose.pose.position.x, rPose.pose.position.y);
-			float dist = norm(cellCoord,poseCoord);
-			//ROS_INFO("dist %f vs searchRadius %d", dist,EP.searchRadius);
+		for (int i = 0; i < teamPose.size(); i++){
+			float dist = norm(cellPt,teamPose[i]);
 			if (dist < EP.searchRadius){
-				poseDC = poseDC + (1-poseDC)*(1-dist/EP.searchRadius);
+				poseDC = poseDC + (1-poseDC)*(1-(dist/EP.searchRadius));
+				poseDC *= pose_weight[i];
+			}
+		}
+		/*
+		if (!EP.robotName.compare("robot_1")){
+			ROS_INFO("(%.3f,%.3f): GoalDC: %.3f, PoseDC: %.3f, FINAL: %.3f", cellPt[0], cellPt[1],
+					goalDC, poseDC,std::max(goalDC,poseDC)+ (1-std::max(goalDC,poseDC))*std::min(goalDC,poseDC));
+		}*/
 
-			}
-		}
-		return MAX(goalDC,poseDC)+ (1-MAX(goalDC,poseDC))*MIN(goalDC,poseDC);
+
+		return std::max(goalDC,poseDC)+ (1-std::max(goalDC,poseDC))*std::min(goalDC,poseDC);
 	}
 
 	std::map<std::vector<int>, double> Environment::cellValidate(int cx_, int cy_){
@@ -544,7 +584,7 @@ namespace Environment_ns {
 			{
 				for (std::size_t i = 0; i < pointIdx.size (); ++i){
 				float oldIntensity = (*frontierCloud)[pointIdx[i]].intensity;
-				return oldIntensity*MIN(1,pointDist[i]/EP.localRange);
+				return oldIntensity*std::fmin(1.0,pointDist[i]/EP.localRange);
 				}
 			}
 		}
@@ -562,6 +602,7 @@ namespace Environment_ns {
 				frontierGrid[i][j] = -1;
 			}
 		}
+
 	}
 
 	void Environment::deleteGrids(){
@@ -583,14 +624,135 @@ namespace Environment_ns {
 			frontierPQ.pop();
 		}
 
-		frontierCells.clear();
-		centroidMap.clear();
-		centroidVector.clear();
 
-		pathCoord.clear();
-		navPS.clear();
+		frontierCells.clear();
+		ownCentroid.clear();
+		finalCentroid.clear();
+		visCentroid.clear();
+		grads.clear();
+
+		navPath.poses.clear();
+		bPath.poses.clear();
+		badCoord.clear();
+
+		vis->resetVis();
 
 	}
+
+	/*
+	 * Finds cost of centroid, if centroid is out of map, return nearest point
+	 */
+	int record = 1;
+
+	bool Environment::findFeasibleCentroid(Frontier& frontier){
+		float navObs = 0, navOob = 0, free = 0; float totalCost = 0.0f;
+		if (!inMap(frontier.x, frontier.y)){
+			findInMap(frontier);
+		}
+
+		//TODO:I need to find a free cell
+		geometry_msgs::PoseStamped endPS = coordToPS(frontier.x,frontier.y);
+		std::vector<geometry_msgs::PoseStamped> plan;
+		if (planner->makePlan(currentPose, endPS, plan)){
+			std::vector<int> prev = pointToCoord(plan[0].pose.position.x, plan[0].pose.position.y);
+			int p = 0;
+			for (auto pose : plan){
+				std::vector<int> coord = pointToCoord(pose.pose.position.x, pose.pose.position.y);
+				if (inMap(coord[0],coord[1])){
+					int idx = coordToIndex(coord[0], coord[1]);
+					if (occupancyGrid->data[idx] != 0){
+						navObs += norm(prev,coord);
+					} else {
+						free += norm(prev,coord);
+					}
+				} else {
+					navOob += norm(prev,coord);
+				}
+
+				prev = coord;
+
+			}
+			frontier.cost = std::fmin(1.0,(free + EP.obsMult*navObs + EP.oobMult*navOob)/EP.maxDist);
+			frontier.pose = coordToPS(frontier.x,frontier.y);
+			return true;
+
+
+			//if (!EP.robotName.compare("robot_1")) ROS_INFO("COSTS: %.0f obs, %.0f oob, %.0f free vs total: %d", navObs, navOob,free, plan.size());
+
+		} else {
+/*			std::vector<std::vector<int>> visitedCell;
+			std::vector<int> goalCoord = frontier.key();
+			inaccessible.push_back(goalCoord);
+			bresenham2D(currCoord,goalCoord,visitedCell);
+			for (auto coord: visitedCell){
+				bPath.poses.push_back(coordToPS(coord[0], coord[1]));
+
+				if (inMap(coord[0],coord[1])){
+					int idx = coordToIndex(coord[0], coord[1]);
+					if (occupancyGrid->data[idx] != 0){
+						navObs++;
+						if (occupancyGrid->data[idx] > 0){
+							navObs ++;
+						}
+					}
+				} else {
+					navOob++;
+				}
+			}
+			ROS_INFO("OOB/TOTAL: (%d/%d)", navOob, visitedCell.size());
+			frontier.cost = std::m(1,(visitedCell.size() + EP.obsMult*navObs + EP.oobMult*navOob)/EP.maxDist);
+			frontier.pose = coordToPS(frontier.x, frontier.y);
+			ROS_INFO("OH no");*/
+			return false;
+
+		}
+
+	}
+	/*
+	 * Finding the closest side of the map
+	 */
+	void Environment::findInMap(Frontier& frontier){
+
+		double dist1, dist2, dist3, dist4;
+		dist1 = frontier.y;
+		dist2 = frontier.x;
+		dist3 = EP.envWidth -1 - frontier.x;
+		dist4 = EP.envHeight -1  - frontier.y;
+		double minDist = std::min(std::min(std::min(dist1,dist2),dist3),dist4);
+		int diffx = frontier.x-currCoord[0];
+		int diffy = frontier.y-currCoord[1];
+		double m,c;
+		if (diffx==0 && diffy == 0) return;
+		//x = constant;
+		if (diffx == 0){
+			frontier.y = 0 ? (dist1<dist4): EP.envHeight-1;
+		} else if (diffy == 0){
+			frontier.x = 0 ? (dist2<dist3): EP.envWidth-1;
+		} else {
+			m = (float)(diffy)/diffx;
+			c = (currCoord[1] - m*(currCoord[0]));
+			//y = mx +c
+			// y = 0
+			if (dist1 == minDist){
+				frontier.y = 0;
+				frontier.x = (int)(-c/m);
+			} else if (dist2 == minDist){
+				frontier.x = 0;
+				frontier.y = (int)c;
+			} else if (dist3 == minDist){
+				frontier.x = EP.envWidth-1;
+				frontier.y = (int)((m*(EP.envWidth-1))+c);
+			} else {
+				frontier.y = EP.envHeight-1;
+				frontier.x = (int)(((EP.envHeight-1)-c)/m);
+			}
+		}
+		if (!inMap(frontier.x,frontier.y)){
+			ROS_ERROR("SMTH WENT WRONG");
+		}
+
+	}
+
 
 	/*
 	 * Converts coord (discountGrid/valueGrid) to index (OccupancyGrid)
@@ -602,9 +764,18 @@ namespace Environment_ns {
 
 	//Point should be in global frame
 	std::vector<float> Environment::coordToPoint(int cx_, int cy_){
-		float originx_ = scanOrigin.x+offSet.x;
-		float originy_ = scanOrigin.y+offSet.y;
-		return {originx_+(cx_*EP.resolution), originy_+(cy_*EP.resolution)};
+		float originx_ = scanOrigin.x;
+		float originy_ = scanOrigin.y;
+		geometry_msgs::Pose own, global;
+		own.position.x = originx_+(cx_*EP.resolution);
+		own.position.y = originy_+(cy_*EP.resolution);
+		own.position.z = 0;
+		//own.orientation.w = 0;
+		//own.orientation.x = 0;
+		//own.orientation.y = 0;
+		//own.orientation.z = 1;
+		tf2::doTransform(own, global, own2Global);
+		return {global.position.x, global.position.y};
 	}
 
 
@@ -626,10 +797,28 @@ namespace Environment_ns {
 	 * need to be calculated wrt origin
 	 */
 	std::vector<int> Environment::Environment::pointToCoord(float mx_, float my_){
+		geometry_msgs::Pose globalPose, ownPose;
+		globalPose.position.x = mx_;
+		globalPose.position.y = my_;
+		globalPose.position.z = 0;
+		//globalPose.orientation.w = 0;
+		//globalPose.orientation.x = 0;
+		//globalPose.orientation.y = 0;
+		//globalPose.orientation.z = 1;
+
+		tf2::doTransform(globalPose, ownPose, global2Own);
+
 		//get index then convert to Coord?
-		float originx = scanOrigin.x+offSet.x;
-		float originy = scanOrigin.y+offSet.y;
-		return {(int)(floor((mx_-originx)/EP.resolution)),(int)(floor((my_-originy)/EP.resolution))};
+		float originx = scanOrigin.x;
+		float originy = scanOrigin.y;
+
+
+		return {(int)(floor((ownPose.position.x-originx)/EP.resolution)),(int)(floor((ownPose.position.y-originy)/EP.resolution))};
+
+		//get index then convert to Coord?
+		//float originx = scanOrigin.x+offSet.x;
+		//float originy = scanOrigin.y+offSet.y;
+		//return {(int)(floor((mx_-originx)/EP.resolution)),(int)(floor((my_-originy)/EP.resolution))};
 
 	}
 
@@ -644,21 +833,19 @@ namespace Environment_ns {
 		return occupancyGrid->data.size() > 0 &&  poseReceived && plannerInitialised;
 	}
 
-	bool Environment::isFrontier(int cx_, int cy_){
+	edge Environment::isFrontier(int cx_, int cy_){
 		// only perform convolution on non edge cells
+		edge cell;
 		if (isEdge(cx_, cy_)){
-			return false;
+			return cell;
 		}
 
-		double grad = edgeGrad(cx_, cy_);
-		if (grad >= EP.frontierThreshold && grad<=UPPERTHRESHOLD){
-			return true;
-		}
-		return false;
+		cell = edgeGrad(cx_, cy_);
+		return cell;
 	}
 
 	bool Environment::inMap(int cx_, int cy_){
-		return (cx_ >= 0 && cx_ <= EP.envWidth && cy_ >= 0 && cy_ <= EP.envHeight);
+		return (cx_ >= 0 && cx_ <= EP.envWidth-1 && cy_ >= 0 && cy_ <= EP.envHeight-1);
 	}
 
 	bool Environment::isEdge(int cx_, int cy_){
@@ -689,7 +876,7 @@ namespace Environment_ns {
 
 
 
-	double Environment::edgeGrad(int cx_, int cy_){
+	edge Environment::edgeGrad(int cx_, int cy_){
 		kcells i;
 		float gradx, grady;
 		int idxTL = coordToIndex(kernel[i=TL][0]+cx_, kernel[i=TL][1]+cy_);
@@ -709,7 +896,10 @@ namespace Environment_ns {
 		grady += -1 * cap(occupancyGrid->data[idxBR]) + cap(occupancyGrid->data[idxTR]);
 		grady += - 2* cap(occupancyGrid->data[idxB]) + 2* cap(occupancyGrid->data[idxT]);
 
-		return abs(gradx)+abs(grady);
+		edge newEdge;
+		newEdge.isEdge = true ? ((abs(gradx)+abs(grady)) >= EP.frontierThreshold) && (abs(gradx)+abs(grady) <= UPPERTHRESHOLD) : false;
+		newEdge.gradient = atan2(grady,gradx);
+		return newEdge;
 
 	}
 
@@ -737,27 +927,42 @@ namespace Environment_ns {
 		tf2_ros::TransformListener tfl(buffer);
 		geometry_msgs::TransformStamped transformStamped;
 		try {
-			transformStamped = buffer.lookupTransform(EP.globalFrame, EP.robotMapFrame, ros::Time(0), ros::Duration(3.0));
+			//			transformStamped = buffer.lookupTransform(EP.globalFrame, EP.robotMapFrame, ros::Time(0), ros::Duration(3.0));
+
+			transformStamped = buffer.lookupTransform(EP.globalFrame, EP.globalFrame, ros::Time(0), ros::Duration(3.0));
 		} catch (tf2::TransformException &e) {
 			ROS_WARN("Error with transform");
 		}
 		offSet.x = transformStamped.transform.translation.x;
 		offSet.y = transformStamped.transform.translation.y;
-		ROS_INFO("%s to %s (%.3f,%.3f)",  EP.robotMapFrame.c_str(),EP.globalFrame.c_str(), offSet.x, offSet.y);
+		own2Global = transformStamped;
+		//ROS_INFO("own2global: %.3f,%.3f", transformStamped.transform.translation.x,transformStamped.transform.translation.y);
+
+		try {
+			//			transformStamped = buffer.lookupTransform(EP.robotMapFrame, EP.globalFrame,ros::Time(0), ros::Duration(3.0));
+
+			transformStamped = buffer.lookupTransform( EP.globalFrame,EP.globalFrame,ros::Time(0), ros::Duration(3.0));
+		} catch (tf2::TransformException &e) {
+			ROS_WARN("Error with transform");
+		}
+		global2Own = transformStamped;
+
+		//ROS_INFO("global2own: %.3f,%.3f", transformStamped.transform.translation.x,transformStamped.transform.translation.y);
 	}
 
 	void Environment::centroidCB(fyp_api::centroidArray c){
-		if(c.robotName.compare(EP.robotName) != 0){
-			teamCentroids[c.robotName] = c;
+		if (c.robotName.compare("assigner") == 0){
+			assigned = c;
 		}
+
 	}
 
 	void Environment::publishCentroid(){
-		ROS_INFO("%s publishing centroid...", EP.robotName.c_str());
 		fyp_api::centroid c;
-		for (auto it: centroidMap){
+		for (auto it: ownCentroid){
 			c.point = coordToPt(it.first[0],it.first[1]);
-			c.csize = it.second;
+			c.ig = it.second.ig;
+			c.grad = it.second.grad;
 			cpub.centroids.push_back(c);
 		}
 
@@ -776,30 +981,39 @@ namespace Environment_ns {
 
 
 
+
 	void Environment::compileCentroid(){
-		for (auto it: teamCentroids){
-			int arraySize = it.second.centroids.size();
-			for (int i = 0; i < arraySize; i++){
-				std::vector<int> coord = pointToCoord(it.second.centroids[i].point.x, it.second.centroids[i].point.y);
-				//need better frontier verification
-				if (isFrontier(coord[0],coord[1])){
-					centroidMap[coord] = it.second.centroids[i].csize;
-					//ROS_INFO("It is a frontier!");
-				} else {
-					if (!isKnown(coord[0], coord[1])){
-						centroidMap[coord] = it.second.centroids[i].csize;
-						//ROS_INFO("It is unknown!");
-					} else {
-						//ROS_INFO("%s's (%d,%d) rejected by %s", it.first.c_str(), coord[0], coord[1], EP.robotName.c_str());
+		int arraySize = assigned.centroids.size();
+		for (int i = 0; i < arraySize; i++){
+			std::vector<int> coord = pointToCoord(assigned.centroids[i].point.x, assigned.centroids[i].point.y);
+			Frontier centroid{coord[0],coord[1]};
+			//need better frontier verification
+			if (!inMap(coord[0],coord[1])) {
+				if (findFeasibleCentroid(centroid)){
+					centroid.ig = assigned.centroids[i].ig;
+					insert(finalCentroid,centroid);
+				}
+			}
+			else {
+				if (isFrontier(coord[0],coord[1]).isEdge || !isKnown(coord[0], coord[1]) ){
+					if (findFeasibleCentroid(centroid)){
+						centroid.ig = assigned.centroids[i].ig;
+						insert(finalCentroid,centroid);
 					}
 				}
-				std::vector<float> point = coordToPoint(coord[0], coord[1]);
-				/*ROS_INFO("%s: (%.3f,%.3f) -> (%d, %d) -> (%.3f, %.3f)",
-						EP.robotName.c_str(), it.second.centroids[i].point.x, it.second.centroids[i].point.y,
-						coord[0], coord[1], point[0], point[1]);*/
 			}
-
 		}
+
+		if (arraySize == 0){
+			for (auto key: ownCentroid){
+				Frontier centroid = key.second;
+				if (findFeasibleCentroid(centroid)){
+					insert(finalCentroid,centroid);
+				}
+			}
+		}
+
+
 	}
 
 	bool Environment::isKnown(int cx_, int cy_){
@@ -823,16 +1037,48 @@ namespace Environment_ns {
 		sum += (occupancyGrid->data[idxB] == -1);
 		sum += (occupancyGrid->data[idxBR] == -1);
 
-		if (sum > 2 ) {
+		if (sum > 5 ) {
+			// had to be increased due to conversion errors (cell to point, point to cell)
 			return false;
 		}
 		return true;
 	}
 
+
 	void Environment::setPlanner(navfn::NavfnROS* planner_){
 		planner = planner_;
 		plannerInitialised = true;
 	}
+
+	void Environment::findNearestUnknown(int& cx_, int& cy_, float angle){
+		float rawx, rawy;
+		rawx = cx_;
+		rawy = cy_;
+		int count = 0;
+		while (inMap(cx_,cy_)){
+			if (!isKnown(cx_,cy_)){
+				//ROS_INFO("STEPS TAKEN: %d", count);
+				return;
+			}
+			rawx += (cos(angle));
+			rawy += (sin(angle));
+			cx_ = (int) rawx;
+			cy_ = (int) rawy;
+			count ++;
+		}
+		return ;
+
+	}
+
+	void Environment::insert(std::map<std::vector<int>, Frontier>& dict, Frontier elem){
+		if (dict.find(elem.key()) == dict.end()){
+			dict.insert(std::pair<std::vector<int>, Frontier>(elem.key(),elem));
+		} else {
+			dict.at(elem.key()) = elem;
+		}
+
+	}
+
 
 }
 

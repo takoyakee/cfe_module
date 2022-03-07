@@ -12,9 +12,23 @@ float norm(geometry_msgs::PoseStamped ps1, geometry_msgs::PoseStamped ps2){
 			pow((ps1.pose.position.y - ps2.pose.position.y),2));
 }
 
+float norm(std::vector<float> v1, std::vector<float> v2){
+	return sqrt(pow((v1[0] -v2[0]),2) + pow((v1[1] -v2[1]),2));
+}
+
+float norm(std::vector<float> v1, geometry_msgs::PoseStamped ps2){
+	return sqrt(pow((v1[0] -ps2.pose.position.x),2)+pow((v1[1] -ps2.pose.position.y),2));
+}
+
+
 float norm(std::vector<int> v1, std::vector<int> v2){
 	return sqrt(pow((v1[0] -v2[0]),2) + pow((v1[1] -v2[1]),2));
 }
+
+float norm(geometry_msgs::Point pt1, geometry_msgs::Point pt2){
+	return sqrt(pow((pt1.x - pt2.x ),2) + pow((pt1.y - pt2.y),2));
+}
+
 
 std::string replace(std::string& str,std::string from, std::string to) {
     size_t start_pos = str.find(from);
@@ -45,10 +59,10 @@ void bresenham2D(std::vector<int> start, std::vector<int> end, std::vector<std::
 	}
 
     int x1,x2, y1,y2;
-    x1 = MIN(start[0],end[0]);
-    x2 = MAX(start[0],end[0]);
-	y1 = MIN(start[1],end[1]);
-	y2 = MAX(start[1],end[1]);
+    x1 = std::min(start[0],end[0]);
+    x2 = std::max(start[0],end[0]);
+	y1 = std::min(start[1],end[1]);
+	y2 = std::max(start[1],end[1]);
 
     if (start[0] == end [0]){
     	//vertical

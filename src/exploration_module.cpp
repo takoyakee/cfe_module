@@ -10,67 +10,58 @@ int main(int argc, char** argv){
 	ros::init(argc, argv, "frontier_exploration");
 	ros::NodeHandle nh;
 	ros::NodeHandle nh_private("~");
-	std::string robotName;
-	nh_private.getParam("robot_name", robotName);
 
     tf2_ros::Buffer buffer;
     tf2_ros::TransformListener tfl(buffer);
     costmap_2d::Costmap2DROS* costMap(NULL);
-    costMap = new costmap_2d::Costmap2DROS("fcostmap",buffer);
+    costMap = new costmap_2d::Costmap2DROS("navfn",buffer);
     navfn::NavfnROS* planner(NULL);
     planner = new navfn::NavfnROS(std::string("fplanner"), costMap);
-
 	Planner_ns::SensorManager sensorManager(nh,nh_private,planner);
 
-	ros::Rate rate(1);
-/*	ros::Publisher map_pub = nh.advertise<nav_msgs::OccupancyGrid>("frontiermap", 1, true);
+	double iterFreq;
+	std::string param_ns = "/frontier_common/";
+	nh.getParam(param_ns+"iter_freq", iterFreq);
+	ros::Rate rate(iterFreq);
 
-	  nav_msgs::OccupancyGrid map;
-	  map.header.stamp = ros::Time::now();
-	  map.header.frame_id = costMap.getGlobalFrameID();
-
-	  costmap_2d::Costmap2D explore_costmap = *costMap.getCostmap();
-
-	    map.info.width = explore_costmap.getSizeInCellsX();
-	    map.info.height = explore_costmap.getSizeInCellsY();
-	    map.info.resolution = explore_costmap.getResolution();
-	    map.info.origin.position.x = explore_costmap.getOriginX();
-	    map.info.origin.position.y = explore_costmap.getOriginY();
-	    map.info.origin.position.z = 0;
-	    map.info.origin.orientation.x = 0;
-	    map.info.origin.orientation.y = 0;
-	    map.info.origin.orientation.z = 0;
-	    map.info.origin.orientation.w = 1;
-
-	    int size = map.info.width * map.info.height;*/
+/*
+	std::string robotName;
+	double bufferRate = 1;
+	nh_private.getParam("robot_name", robotName);
+	int bufferNum = atoi(&robotName.back());
+	ROS_INFO("%d", bufferNum);
+	ros::Duration bufferTime(bufferRate*bufferNum);
+	bool delay = true;
+*/
+	bool stop = false;
 
 	while (ros::ok()){
-
-		sensorManager.execute();
-
-/*	    const unsigned char* char_map = explore_costmap.getCharMap();
-
-	    map.data.resize((size_t)size);
-	    for (int i=0; i<size; i++) {
-	      if (char_map[i] == costmap_2d::NO_INFORMATION)
-	      	map.data[i] = -1;
-	      else if (char_map[i] == costmap_2d::LETHAL_OBSTACLE)
-	      	map.data[i] = 100;
-	      else
-	      	map.data[i] = 0;
-	    }
-
-	    map_pub.publish(map);*/
 	    ros::spinOnce();
-	}
+/*		if (sensorManager.isInitialised() && delay){
+			ROS_INFO("DELAYING..");
+			bufferTime.sleep();
+			delay=false;
+		}*/
+		//ROS_INFO("is Initialised: %d", sensorManager.isInitialised());
 
-    if (costMap != NULL){
+		stop = sensorManager.execute();
+
+		rate.sleep();
+		if (stop){
+			break;
+		}
+
+
+	}
+/*    if (costMap != NULL){
     	delete costMap;
 	}
 	if (planner != NULL){
 		delete planner;
-	}
-	return 1;
+	}*/
+	ROS_INFO("Save maps now...");
+	ros::shutdown();
+	return 0;
 }
 
 
