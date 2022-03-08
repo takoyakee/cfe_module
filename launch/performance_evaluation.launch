@@ -28,7 +28,7 @@
 	<param name="env_used" value="$(arg env_used)"/>
 	
 	<!--  outputs -->
-	<param name="file_name" value="$(find fyp_api)/data/$(arg env_used)_$(arg type)_MERGE.txt"/>
+	<param name="file_name" value="$(find fyp_api)/data/$(arg env_used)_$(arg type)$(env CODE).txt"/>
 	<param name="merged_map_topic" value="merged_map"/>
 	<param name="trajectory_topic" value="traj"/>
 	
