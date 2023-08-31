@@ -12,4 +12,5 @@ For detailed instruction on simulation, refer to <a href="simulation.pdf" target
 
 For detailed documentation, refer to <a href="paper" target="_blank">paper</a> which was written in fulfillment of the ME BEng Dissertation.
 
+![arhictecutre of the full system](architecture.png)
 
