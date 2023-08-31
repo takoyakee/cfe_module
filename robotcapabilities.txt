@@ -1,6 +1,3 @@
-github: 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
-
-
 Current capabilities:
 Node is launchable with param names
 - Subscribe to tf tree and know its current location
