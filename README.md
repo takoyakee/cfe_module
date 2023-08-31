@@ -7,6 +7,9 @@ For simulation, three other modules/repos are required.
 - [fyp_commands](https://github.com/takoyakee/fyp_commands): Shell commands (run in this order: env.sh, run.sh, stats.sh, save.sh)
 - [env_stats](https://github.com/takoyakee/env_stats): Analysis of map overlap (as measure of efficiency) *optional
 
-For detailed instruction on simulation, refer to [simulation](simulation.pdf) which walk through the files and commands needed.
+For detailed instruction on simulation, refer to <a href="simulation.pdf" target="_blank">simulation</a>
+ which walk through the files and commands needed.
 
-For detailed documentation, refer to [paper](paper.pdf) which was written in fulfillment of the ME BEng Dissertation.
+For detailed documentation, refer to <a href="paper" target="_blank">paper</a> which was written in fulfillment of the ME BEng Dissertation.
+
+
